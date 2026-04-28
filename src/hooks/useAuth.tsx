@@ -92,7 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function refresh() {
-    if (user) await loadExtras(user.id);
+    if (user) await loadExtras(user.id, user.email);
   }
 
   async function signOut() {
