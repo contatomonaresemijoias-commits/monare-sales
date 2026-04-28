@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Loader2, Plus, UserPlus, Link2 } from 'lucide-react';
+import { Loader2, Plus, UserPlus, Link2, Trash2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -48,6 +48,17 @@ export default function Parceiras() {
     } else {
       setNovaNome('');
       setNovaWa('');
+      load();
+    }
+  }
+
+  async function excluirParceira(p: Parceira) {
+    if (!confirm(`Excluir a parceira "${p.nome}"? Isso removerá o mostruário dela e desvinculará suas vendedoras.`)) return;
+    const { error } = await supabase.from('parceiras').delete().eq('id', p.id);
+    if (error) {
+      toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: 'Parceira removida' });
       load();
     }
   }
@@ -107,14 +118,23 @@ export default function Parceiras() {
             const linked = profiles.filter((pr) => pr.parceira_id === p.id);
             return (
               <div key={p.id} className="p-3 rounded-xl border border-border">
-                <div className="flex justify-between items-start">
+                <div className="flex justify-between items-start gap-2">
                   <div>
                     <p className="font-semibold text-ink">{p.nome}</p>
                     <p className="text-xs text-ink-soft">{p.whatsapp ?? '—'}</p>
                   </div>
-                  <span className="text-[10px] uppercase tracking-wider text-ink-soft">
-                    {linked.length} usuário(s)
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-wider text-ink-soft">
+                      {linked.length} usuário(s)
+                    </span>
+                    <button
+                      onClick={() => excluirParceira(p)}
+                      className="text-destructive hover:bg-destructive/10 p-1.5 rounded-md"
+                      title="Excluir parceira"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
                 {linked.length > 0 && (
                   <ul className="mt-2 space-y-1">
