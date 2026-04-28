@@ -25,12 +25,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
 
-  async function loadExtras(uid: string) {
+  async function loadExtras(uid: string, email?: string | null) {
     const [{ data: prof }, { data: rs }] = await Promise.all([
       supabase.from('profiles').select('*').eq('user_id', uid).maybeSingle(),
       supabase.from('user_roles').select('role').eq('user_id', uid),
     ]);
-    setProfile(prof as Profile | null);
+    let finalProfile = prof as Profile | null;
+
+    // TESTE: força vínculo do coelho@monare.com à primeira parceira
+    if (email === 'coelho@monare.com' && finalProfile && !finalProfile.parceira_id) {
+      const { data: primeira } = await supabase
+        .from('parceiras')
+        .select('id')
+        .order('nome')
+        .limit(1)
+        .maybeSingle();
+      if (primeira?.id) {
+        const { data: upd, error: updErr } = await supabase
+          .from('profiles')
+          .update({ parceira_id: primeira.id })
+          .eq('id', finalProfile.id)
+          .select()
+          .maybeSingle();
+        if (updErr) console.error('[useAuth] Falha ao auto-vincular parceira:', updErr);
+        if (upd) finalProfile = upd as Profile;
+      } else {
+        console.error('[useAuth] Nenhuma parceira encontrada para auto-vínculo.');
+      }
+    }
+
+    setProfile(finalProfile);
     setRoles(((rs ?? []) as { role: Role }[]).map((r) => r.role));
   }
 
