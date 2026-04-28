@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { ShieldCheck, Gem, Send, Loader2, AlertCircle, CheckCircle, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import {
   generateWarrantyCode,
   formatWhatsApp,
@@ -10,12 +11,13 @@ import {
 } from '@/lib/monare';
 import SuccessModal from './SuccessModal';
 
-const DEMO_PARCEIRA_ID = '00000000-0000-0000-0000-000000000001';
+type ProdutoEstoque = { id: string; nome: string; sku: string; quantidade: number };
+type SkuStatus = 'idle' | 'loading' | 'found' | 'not_in_showcase' | 'out_of_stock' | 'error';
 
-type Produto = { id: string; nome: string; sku: string };
-type SkuStatus = 'idle' | 'loading' | 'found' | 'error';
+export default function SaleRegistrationForm() {
+  const { profile } = useAuth();
+  const parceiraId = profile?.parceira_id ?? null;
 
-export default function SaleRegistrationForm({ parceiraId = DEMO_PARCEIRA_ID }: { parceiraId?: string }) {
   const [form, setForm] = useState({
     sku: '',
     cliente_nome: '',
@@ -23,37 +25,75 @@ export default function SaleRegistrationForm({ parceiraId = DEMO_PARCEIRA_ID }: 
     data_venda: getToday(),
     termo_aceito: false,
   });
-  const [produto, setProduto] = useState<Produto | null>(null);
+  const [produto, setProduto] = useState<ProdutoEstoque | null>(null);
   const [skuStatus, setSkuStatus] = useState<SkuStatus>('idle');
+  const [skuMessage, setSkuMessage] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [vendaFinalizada, setVendaFinalizada] = useState<any>(null);
 
-  const lookupSKU = useCallback(async (sku: string) => {
-    if (sku.length < 3) {
-      setProduto(null);
-      setSkuStatus('idle');
-      return;
-    }
-    setSkuStatus('loading');
-    try {
-      const { data, error } = await supabase
-        .from('produtos')
-        .select('id, nome, sku')
-        .eq('sku', sku.toUpperCase())
-        .eq('ativo', true)
-        .maybeSingle();
-      if (error || !data) {
+  const lookupSKU = useCallback(
+    async (sku: string) => {
+      if (sku.length < 3) {
+        setProduto(null);
+        setSkuStatus('idle');
+        setSkuMessage('');
+        return;
+      }
+      if (!parceiraId) {
         setProduto(null);
         setSkuStatus('error');
-      } else {
-        setProduto(data);
-        setSkuStatus('found');
+        setSkuMessage('Sua conta ainda não está vinculada a uma parceira. Contate o admin.');
+        return;
       }
-    } catch {
-      setSkuStatus('error');
-    }
-  }, []);
+      setSkuStatus('loading');
+      try {
+        // Busca produto por SKU
+        const { data: prod } = await supabase
+          .from('produtos')
+          .select('id, nome, sku')
+          .eq('sku', sku.toUpperCase())
+          .eq('ativo', true)
+          .maybeSingle();
+
+        if (!prod) {
+          setProduto(null);
+          setSkuStatus('not_in_showcase');
+          setSkuMessage('Este item não consta no seu mostruário atual');
+          return;
+        }
+
+        // Busca o item no mostruário desta parceira
+        const { data: estoque } = await supabase
+          .from('estoque_parceiras')
+          .select('quantidade')
+          .eq('parceira_id', parceiraId)
+          .eq('produto_id', prod.id)
+          .maybeSingle();
+
+        if (!estoque) {
+          setProduto(null);
+          setSkuStatus('not_in_showcase');
+          setSkuMessage('Este item não consta no seu mostruário atual');
+          return;
+        }
+        if (estoque.quantidade <= 0) {
+          setProduto({ ...prod, quantidade: 0 });
+          setSkuStatus('out_of_stock');
+          setSkuMessage('Estoque esgotado para este SKU no seu mostruário');
+          return;
+        }
+
+        setProduto({ ...prod, quantidade: estoque.quantidade });
+        setSkuStatus('found');
+        setSkuMessage('');
+      } catch {
+        setSkuStatus('error');
+        setSkuMessage('Erro ao consultar mostruário');
+      }
+    },
+    [parceiraId],
+  );
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const { name, value, type, checked } = e.target;
@@ -69,7 +109,7 @@ export default function SaleRegistrationForm({ parceiraId = DEMO_PARCEIRA_ID }: 
 
   function validate() {
     const errs: Record<string, string> = {};
-    if (!form.sku || skuStatus !== 'found') errs.sku = 'SKU inválido ou não encontrado.';
+    if (!form.sku || skuStatus !== 'found') errs.sku = skuMessage || 'SKU inválido.';
     if (!form.cliente_nome.trim() || form.cliente_nome.trim().length < 3)
       errs.cliente_nome = 'Nome obrigatório (mín. 3 caracteres).';
     const digits = form.cliente_whatsapp.replace(/\D/g, '');
@@ -86,6 +126,7 @@ export default function SaleRegistrationForm({ parceiraId = DEMO_PARCEIRA_ID }: 
       setErrors(errs);
       return;
     }
+    if (!parceiraId || !produto) return;
     setSubmitting(true);
     try {
       const codigo_garantia = generateWarrantyCode();
@@ -93,8 +134,8 @@ export default function SaleRegistrationForm({ parceiraId = DEMO_PARCEIRA_ID }: 
         .from('vendas')
         .insert({
           parceira_id: parceiraId,
-          produto_id: produto!.id,
-          produto_nome: produto!.nome,
+          produto_id: produto.id,
+          produto_nome: produto.nome,
           cliente_nome: form.cliente_nome.trim(),
           cliente_whatsapp: form.cliente_whatsapp.replace(/\D/g, ''),
           data_venda: form.data_venda,
@@ -104,7 +145,17 @@ export default function SaleRegistrationForm({ parceiraId = DEMO_PARCEIRA_ID }: 
         })
         .select()
         .single();
-      if (error) throw error;
+      if (error) {
+        // Mensagens vindas do trigger no Postgres
+        if (error.message.includes('mostruário atual')) {
+          setErrors({ sku: 'Este item não consta no seu mostruário atual' });
+        } else if (error.message.includes('Estoque esgotado')) {
+          setErrors({ sku: 'Estoque esgotado para este SKU no seu mostruário' });
+        } else {
+          throw error;
+        }
+        return;
+      }
       setVendaFinalizada({
         ...data,
         cliente_nome: form.cliente_nome,
@@ -113,6 +164,7 @@ export default function SaleRegistrationForm({ parceiraId = DEMO_PARCEIRA_ID }: 
       setForm({ sku: '', cliente_nome: '', cliente_whatsapp: '', data_venda: getToday(), termo_aceito: false });
       setProduto(null);
       setSkuStatus('idle');
+      setSkuMessage('');
     } catch (err) {
       console.error(err);
       setErrors({ _global: 'Erro ao registrar venda. Tente novamente.' });
@@ -127,7 +179,6 @@ export default function SaleRegistrationForm({ parceiraId = DEMO_PARCEIRA_ID }: 
 
   return (
     <div className="w-full max-w-md mx-auto px-5 py-8">
-      {/* Header */}
       <div className="text-center mb-8">
         <div className="inline-flex items-center gap-2 mb-3">
           <div className="h-px w-8 bg-rosa/40" />
@@ -138,9 +189,22 @@ export default function SaleRegistrationForm({ parceiraId = DEMO_PARCEIRA_ID }: 
         </div>
         <h1 className="font-serif text-5xl tracking-[0.15em] font-light text-ink uppercase">Monarê</h1>
         <p className="text-ink-soft text-xs tracking-[0.25em] uppercase mt-2">Registro de Venda</p>
+        {profile?.display_name && (
+          <p className="text-ink-soft text-[11px] tracking-[0.15em] uppercase mt-1">
+            Olá, {profile.display_name}
+          </p>
+        )}
       </div>
 
-      {/* Card */}
+      {!parceiraId && (
+        <div className="mb-5 flex items-start gap-2 p-4 rounded-2xl bg-yellow-50 border border-yellow-200">
+          <AlertCircle size={16} className="text-yellow-700 shrink-0 mt-0.5" />
+          <p className="text-yellow-900 text-xs">
+            Sua conta ainda não está vinculada a uma parceira. Solicite ao admin para configurar seu mostruário.
+          </p>
+        </div>
+      )}
+
       <div className="bg-white rounded-3xl shadow-luxe overflow-hidden border border-white/60">
         <div className="h-1.5 w-full accent-bar" />
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
@@ -151,7 +215,6 @@ export default function SaleRegistrationForm({ parceiraId = DEMO_PARCEIRA_ID }: 
             </div>
           )}
 
-          {/* SKU */}
           <div>
             <label className={labelBase}>Código do Produto (SKU)</label>
             <div className="relative">
@@ -161,24 +224,34 @@ export default function SaleRegistrationForm({ parceiraId = DEMO_PARCEIRA_ID }: 
                 onChange={handleChange}
                 placeholder="SKU001"
                 autoComplete="off"
-                className={inputBase + ' pr-12 font-mono'}
+                disabled={!parceiraId}
+                className={inputBase + ' pr-12 font-mono disabled:opacity-50'}
               />
               <div className="absolute right-4 top-1/2 -translate-y-1/2">
                 {skuStatus === 'loading' && <Loader2 size={18} className="text-ink-soft animate-spin" />}
                 {skuStatus === 'found' && <CheckCircle size={18} className="text-rosa" />}
-                {skuStatus === 'error' && <X size={18} className="text-destructive" />}
+                {(skuStatus === 'not_in_showcase' ||
+                  skuStatus === 'out_of_stock' ||
+                  skuStatus === 'error') && <X size={18} className="text-destructive" />}
               </div>
             </div>
             {skuStatus === 'found' && produto && (
               <div className="mt-2 flex items-center gap-2 px-3 py-2 rounded-xl bg-bege-light border border-bege">
                 <Gem size={14} className="text-rosa" />
-                <p className="text-sm text-ink font-medium">{produto.nome}</p>
+                <p className="text-sm text-ink font-medium flex-1">{produto.nome}</p>
+                <span className="text-[10px] uppercase tracking-wider text-ink-soft">
+                  Em estoque: {produto.quantidade}
+                </span>
               </div>
             )}
-            {errors.sku && <p className="mt-1.5 text-xs text-destructive">{errors.sku}</p>}
+            {(skuStatus === 'not_in_showcase' || skuStatus === 'out_of_stock' || skuStatus === 'error') && (
+              <p className="mt-1.5 text-xs text-destructive">{skuMessage}</p>
+            )}
+            {errors.sku && skuStatus === 'idle' && (
+              <p className="mt-1.5 text-xs text-destructive">{errors.sku}</p>
+            )}
           </div>
 
-          {/* Nome */}
           <div>
             <label className={labelBase}>Nome da Cliente</label>
             <input
@@ -191,7 +264,6 @@ export default function SaleRegistrationForm({ parceiraId = DEMO_PARCEIRA_ID }: 
             {errors.cliente_nome && <p className="mt-1.5 text-xs text-destructive">{errors.cliente_nome}</p>}
           </div>
 
-          {/* WhatsApp */}
           <div>
             <label className={labelBase}>WhatsApp da Cliente</label>
             <input
@@ -205,7 +277,6 @@ export default function SaleRegistrationForm({ parceiraId = DEMO_PARCEIRA_ID }: 
             {errors.cliente_whatsapp && <p className="mt-1.5 text-xs text-destructive">{errors.cliente_whatsapp}</p>}
           </div>
 
-          {/* Data */}
           <div>
             <label className={labelBase}>Data da Venda</label>
             <input
@@ -225,7 +296,6 @@ export default function SaleRegistrationForm({ parceiraId = DEMO_PARCEIRA_ID }: 
 
           <div className="h-px bg-border" />
 
-          {/* Termo */}
           <div>
             <label className="flex items-start gap-3 cursor-pointer">
               <div className="relative pt-0.5">
@@ -248,10 +318,9 @@ export default function SaleRegistrationForm({ parceiraId = DEMO_PARCEIRA_ID }: 
             {errors.termo_aceito && <p className="mt-1.5 text-xs text-destructive">{errors.termo_aceito}</p>}
           </div>
 
-          {/* Submit */}
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || !parceiraId}
             className="w-full flex items-center justify-center gap-2.5 py-4 rounded-2xl bg-rosa-gradient text-white text-sm font-semibold tracking-[0.1em] uppercase shadow-rosa active:scale-[0.98] transition-all disabled:opacity-60"
           >
             {submitting ? (
