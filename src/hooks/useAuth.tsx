@@ -35,14 +35,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
+    let active = true;
+
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+      setLoading(true);
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
-        setTimeout(() => loadExtras(s.user.id), 0);
+        setTimeout(() => {
+          loadExtras(s.user.id).finally(() => {
+            if (active) setLoading(false);
+          });
+        }, 0);
       } else {
         setProfile(null);
         setRoles([]);
+        setLoading(false);
       }
     });
 
@@ -53,7 +61,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       else setLoading(false);
     });
 
-    return () => sub.subscription.unsubscribe();
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   async function refresh() {
