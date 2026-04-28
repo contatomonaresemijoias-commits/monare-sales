@@ -14,7 +14,117 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      parceiras: {
+        Row: {
+          ativa: boolean
+          created_at: string
+          id: string
+          nome: string
+          whatsapp: string | null
+        }
+        Insert: {
+          ativa?: boolean
+          created_at?: string
+          id?: string
+          nome: string
+          whatsapp?: string | null
+        }
+        Update: {
+          ativa?: boolean
+          created_at?: string
+          id?: string
+          nome?: string
+          whatsapp?: string | null
+        }
+        Relationships: []
+      }
+      produtos: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          descricao: string | null
+          id: string
+          nome: string
+          sku: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          nome: string
+          sku: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          nome?: string
+          sku?: string
+        }
+        Relationships: []
+      }
+      vendas: {
+        Row: {
+          cliente_nome: string
+          cliente_whatsapp: string
+          codigo_garantia: string
+          created_at: string
+          data_venda: string
+          id: string
+          ip_venda: string | null
+          parceira_id: string | null
+          produto_id: string | null
+          produto_nome: string
+          termo_aceito: boolean
+          validade_garantia: string | null
+        }
+        Insert: {
+          cliente_nome: string
+          cliente_whatsapp: string
+          codigo_garantia: string
+          created_at?: string
+          data_venda: string
+          id?: string
+          ip_venda?: string | null
+          parceira_id?: string | null
+          produto_id?: string | null
+          produto_nome: string
+          termo_aceito?: boolean
+          validade_garantia?: string | null
+        }
+        Update: {
+          cliente_nome?: string
+          cliente_whatsapp?: string
+          codigo_garantia?: string
+          created_at?: string
+          data_venda?: string
+          id?: string
+          ip_venda?: string | null
+          parceira_id?: string | null
+          produto_id?: string | null
+          produto_nome?: string
+          termo_aceito?: boolean
+          validade_garantia?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vendas_parceira_id_fkey"
+            columns: ["parceira_id"]
+            isOneToOne: false
+            referencedRelation: "parceiras"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendas_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
