@@ -246,6 +246,17 @@ export type Database = {
         }
         Returns: boolean
       }
+      lookup_certificate: {
+        Args: { _id: string }
+        Returns: {
+          cliente_nome: string
+          codigo_garantia: string
+          created_at: string
+          data_venda: string
+          id: string
+          produto_nome: string
+        }[]
+      }
     }
     Enums: {
       app_role: "admin" | "parceira"

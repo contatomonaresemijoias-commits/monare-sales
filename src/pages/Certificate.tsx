@@ -34,13 +34,10 @@ export default function Certificate() {
       return;
     }
     (async () => {
-      const { data, error } = await supabase
-        .from('vendas')
-        .select('id, codigo_garantia, produto_nome, cliente_nome, data_venda, created_at')
-        .eq('id', id)
-        .maybeSingle();
-      if (error || !data) setNotFound(true);
-      else setVenda(data);
+      const { data, error } = await supabase.rpc('lookup_certificate', { _id: id });
+      const row = Array.isArray(data) ? data[0] : data;
+      if (error || !row) setNotFound(true);
+      else setVenda(row as Venda);
       setLoading(false);
     })();
   }, [id]);
