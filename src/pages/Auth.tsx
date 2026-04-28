@@ -46,9 +46,10 @@ export default function AuthPage() {
         'Invalid login credentials': 'E-mail ou senha incorretos.',
         'Email not confirmed': 'E-mail ainda não confirmado.',
         'User already registered': 'Este e-mail já está cadastrado.',
+        'Password should be at least 6 characters': 'A senha deve ter pelo menos 6 caracteres.',
       };
-      const friendly = map[raw] ?? raw;
-      setError(`${friendly} (detalhe: ${raw})`);
+      const friendly = map[raw] ?? 'Erro inesperado. Tente novamente.';
+      setError(friendly);
       console.error('[Auth]', err);
     } finally {
       setBusy(false);
