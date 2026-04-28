@@ -1,6 +1,34 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer utilities {
+  .bg-monare-gradient {
+    background: linear-gradient(160deg, hsl(var(--bege-light)) 0%, hsl(var(--bege-warm)) 100%);
+  }
+  .bg-rosa-gradient {
+    background: linear-gradient(135deg, hsl(var(--rosa-light)) 0%, hsl(var(--rosa)) 100%);
+  }
+  .bg-bege-soft-gradient {
+    background: linear-gradient(135deg, hsl(var(--bege-light)), hsl(var(--bege)));
+  }
+  .accent-bar {
+    background: linear-gradient(90deg, hsl(var(--bege)) 0%, hsl(var(--rosa)) 50%, hsl(var(--bege)) 100%);
+  }
+  .shadow-luxe {
+    box-shadow: 0 20px 60px -15px hsl(var(--rosa) / 0.25);
+  }
+  .shadow-rosa {
+    box-shadow: 0 6px 20px hsl(var(--rosa) / 0.3);
+  }
+}
+
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+@keyframes slideUp { from { transform: translateY(40px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
+.animate-fade-in { animation: fadeIn 0.3s ease-out; }
+.animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
 
 /* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
 All colors MUST be HSL.
@@ -8,8 +36,17 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Monarê palette */
+    --bege: 41 36% 83%;          /* #e1d8c4 */
+    --bege-light: 39 45% 94%;    /* #f5f0e8 */
+    --bege-warm: 36 35% 88%;     /* #ede5d5 */
+    --rosa: 350 32% 57%;         /* #b76a76 */
+    --rosa-light: 350 36% 64%;   /* #c47e8a */
+    --ink: 220 14% 24%;
+    --ink-soft: 220 9% 46%;
+
+    --background: 39 45% 94%;
+    --foreground: 220 14% 24%;
 
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
@@ -17,26 +54,26 @@ All colors MUST be HSL.
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 350 32% 57%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 41 36% 83%;
+    --secondary-foreground: 220 14% 24%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 39 30% 90%;
+    --muted-foreground: 220 9% 46%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 41 36% 83%;
+    --accent-foreground: 220 14% 24%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --border: 39 25% 85%;
+    --input: 39 25% 85%;
+    --ring: 350 32% 57%;
 
-    --radius: 0.5rem;
+    --radius: 1rem;
 
     --sidebar-background: 0 0% 98%;
 
