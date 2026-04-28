@@ -1,9 +1,10 @@
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Package, Users, Boxes } from 'lucide-react';
+import { ArrowLeft, Package, Users, Boxes, UserCog } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Mostruario from '@/components/admin/Mostruario';
 import Parceiras from '@/components/admin/Parceiras';
 import Produtos from '@/components/admin/Produtos';
+import Vendedoras from '@/components/admin/Vendedoras';
 
 export default function Admin() {
   return (
@@ -25,10 +26,14 @@ export default function Admin() {
 
       <div className="max-w-5xl mx-auto px-5">
         <Tabs defaultValue="mostruario" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 bg-white/70 border border-bege">
+          <TabsList className="grid w-full grid-cols-4 bg-white/70 border border-bege">
             <TabsTrigger value="mostruario" className="data-[state=active]:bg-rosa data-[state=active]:text-white">
               <Boxes size={14} className="mr-1.5" />
               <span className="hidden sm:inline">Gestão de </span>Mostruário
+            </TabsTrigger>
+            <TabsTrigger value="vendedoras" className="data-[state=active]:bg-rosa data-[state=active]:text-white">
+              <UserCog size={14} className="mr-1.5" />
+              Vendedoras
             </TabsTrigger>
             <TabsTrigger value="parceiras" className="data-[state=active]:bg-rosa data-[state=active]:text-white">
               <Users size={14} className="mr-1.5" />
@@ -42,6 +47,9 @@ export default function Admin() {
 
           <TabsContent value="mostruario" className="mt-6">
             <Mostruario />
+          </TabsContent>
+          <TabsContent value="vendedoras" className="mt-6">
+            <Vendedoras />
           </TabsContent>
           <TabsContent value="parceiras" className="mt-6">
             <Parceiras />

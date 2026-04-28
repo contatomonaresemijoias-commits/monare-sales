@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -45,6 +45,17 @@ export default function Produtos() {
     if (!error) load();
   }
 
+  async function excluir(p: Produto) {
+    if (!confirm(`Excluir produto ${p.sku} - ${p.nome}? Isso removerá também o estoque vinculado.`)) return;
+    const { error } = await supabase.from('produtos').delete().eq('id', p.id);
+    if (error) {
+      toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: 'Produto excluído' });
+      load();
+    }
+  }
+
   if (loading)
     return (
       <div className="flex justify-center py-10">
@@ -87,6 +98,13 @@ export default function Produtos() {
                 }`}
               >
                 {p.ativo ? 'Ativo' : 'Inativo'}
+              </button>
+              <button
+                onClick={() => excluir(p)}
+                className="text-destructive hover:bg-destructive/10 p-2 rounded-md"
+                title="Excluir"
+              >
+                <Trash2 size={14} />
               </button>
             </div>
           ))}
