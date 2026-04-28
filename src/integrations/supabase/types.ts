@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      estoque_parceiras: {
+        Row: {
+          created_at: string
+          id: string
+          parceira_id: string
+          produto_id: string
+          quantidade: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          parceira_id: string
+          produto_id: string
+          quantidade?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          parceira_id?: string
+          produto_id?: string
+          quantidade?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "estoque_parceiras_parceira_id_fkey"
+            columns: ["parceira_id"]
+            isOneToOne: false
+            referencedRelation: "parceiras"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "estoque_parceiras_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       parceiras: {
         Row: {
           ativa: boolean
@@ -65,6 +107,62 @@ export type Database = {
         }
         Relationships: []
       }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          id: string
+          parceira_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          parceira_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          parceira_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_parceira_id_fkey"
+            columns: ["parceira_id"]
+            isOneToOne: false
+            referencedRelation: "parceiras"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
       vendas: {
         Row: {
           cliente_nome: string
@@ -72,6 +170,7 @@ export type Database = {
           codigo_garantia: string
           created_at: string
           data_venda: string
+          estoque_id: string | null
           id: string
           ip_venda: string | null
           parceira_id: string | null
@@ -86,6 +185,7 @@ export type Database = {
           codigo_garantia: string
           created_at?: string
           data_venda: string
+          estoque_id?: string | null
           id?: string
           ip_venda?: string | null
           parceira_id?: string | null
@@ -100,6 +200,7 @@ export type Database = {
           codigo_garantia?: string
           created_at?: string
           data_venda?: string
+          estoque_id?: string | null
           id?: string
           ip_venda?: string | null
           parceira_id?: string | null
@@ -109,6 +210,13 @@ export type Database = {
           validade_garantia?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "vendas_estoque_id_fkey"
+            columns: ["estoque_id"]
+            isOneToOne: false
+            referencedRelation: "estoque_parceiras"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "vendas_parceira_id_fkey"
             columns: ["parceira_id"]
@@ -130,10 +238,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      current_parceira_id: { Args: never; Returns: string }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "parceira"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -260,6 +375,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "parceira"],
+    },
   },
 } as const
