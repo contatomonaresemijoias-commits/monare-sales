@@ -15,7 +15,7 @@ const Index = () => {
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/80 hover:bg-white text-ink text-[11px] uppercase tracking-wider font-semibold border border-bege transition-all"
             >
               <Settings size={13} />
-              Admin
+              Painel Admin
             </Link>
           )}
           <button
