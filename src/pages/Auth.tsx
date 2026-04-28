@@ -41,7 +41,15 @@ export default function AuthPage() {
         if (error) throw error;
       }
     } catch (err: any) {
-      setError(err.message ?? 'Erro ao autenticar');
+      const raw = err?.message ?? 'Erro ao autenticar';
+      const map: Record<string, string> = {
+        'Invalid login credentials': 'E-mail ou senha incorretos.',
+        'Email not confirmed': 'E-mail ainda não confirmado.',
+        'User already registered': 'Este e-mail já está cadastrado.',
+      };
+      const friendly = map[raw] ?? raw;
+      setError(`${friendly} (detalhe: ${raw})`);
+      console.error('[Auth]', err);
     } finally {
       setBusy(false);
     }
