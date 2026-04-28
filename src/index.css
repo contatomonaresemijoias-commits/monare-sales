@@ -1,6 +1,34 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer utilities {
+  .bg-monare-gradient {
+    background: linear-gradient(160deg, hsl(var(--bege-light)) 0%, hsl(var(--bege-warm)) 100%);
+  }
+  .bg-rosa-gradient {
+    background: linear-gradient(135deg, hsl(var(--rosa-light)) 0%, hsl(var(--rosa)) 100%);
+  }
+  .bg-bege-soft-gradient {
+    background: linear-gradient(135deg, hsl(var(--bege-light)), hsl(var(--bege)));
+  }
+  .accent-bar {
+    background: linear-gradient(90deg, hsl(var(--bege)) 0%, hsl(var(--rosa)) 50%, hsl(var(--bege)) 100%);
+  }
+  .shadow-luxe {
+    box-shadow: 0 20px 60px -15px hsl(var(--rosa) / 0.25);
+  }
+  .shadow-rosa {
+    box-shadow: 0 6px 20px hsl(var(--rosa) / 0.3);
+  }
+}
+
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+@keyframes slideUp { from { transform: translateY(40px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
+.animate-fade-in { animation: fadeIn 0.3s ease-out; }
+.animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
 
 /* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
 All colors MUST be HSL.
