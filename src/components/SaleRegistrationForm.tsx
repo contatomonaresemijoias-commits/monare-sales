@@ -41,10 +41,7 @@ export default function SaleRegistrationForm() {
         return;
       }
       if (!parceiraId) {
-        setProduto(null);
-        setSkuStatus('error');
-        setSkuMessage('Sua conta ainda não está vinculada a uma parceira. Contate o admin.');
-        return;
+        console.error('[SaleRegistrationForm] Usuário sem parceira_id vinculada no profile.');
       }
       setSkuStatus('loading');
       try {
