@@ -41,10 +41,7 @@ export default function SaleRegistrationForm() {
         return;
       }
       if (!parceiraId) {
-        setProduto(null);
-        setSkuStatus('error');
-        setSkuMessage('Sua conta ainda não está vinculada a uma parceira. Contate o admin.');
-        return;
+        console.error('[SaleRegistrationForm] Usuário sem parceira_id vinculada no profile.');
       }
       setSkuStatus('loading');
       try {
@@ -196,14 +193,7 @@ export default function SaleRegistrationForm() {
         )}
       </div>
 
-      {!parceiraId && (
-        <div className="mb-5 flex items-start gap-2 p-4 rounded-2xl bg-yellow-50 border border-yellow-200">
-          <AlertCircle size={16} className="text-yellow-700 shrink-0 mt-0.5" />
-          <p className="text-yellow-900 text-xs">
-            Sua conta ainda não está vinculada a uma parceira. Solicite ao admin para configurar seu mostruário.
-          </p>
-        </div>
-      )}
+      {!parceiraId && (() => { console.error('[SaleRegistrationForm] Conta sem parceira vinculada — bloqueio de UI removido para teste.'); return null; })()}
 
       <div className="bg-white rounded-3xl shadow-luxe overflow-hidden border border-white/60">
         <div className="h-1.5 w-full accent-bar" />
