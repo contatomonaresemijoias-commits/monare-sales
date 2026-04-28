@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 
 export default function AuthPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, isAdmin } = useAuth();
   const nav = useNavigate();
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
@@ -15,11 +15,11 @@ export default function AuthPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!loading && user) nav('/', { replace: true });
-  }, [user, loading, nav]);
+    if (!loading && user) nav(isAdmin ? '/admin' : '/', { replace: true });
+  }, [user, loading, isAdmin, nav]);
 
   if (loading) return null;
-  if (user) return <Navigate to="/" replace />;
+  if (user) return <Navigate to={isAdmin ? '/admin' : '/'} replace />;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
