@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(s?.user ?? null);
       if (s?.user) {
         setTimeout(() => {
-          loadExtras(s.user.id).finally(() => {
+          loadExtras(s.user.id, s.user.email).finally(() => {
             if (active) setLoading(false);
           });
         }, 0);
