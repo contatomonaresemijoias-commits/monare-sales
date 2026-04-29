@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Search, Plus, Minus, Save, Trash2, ArrowLeft, Users, Package } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Loader2, Search, Plus, Minus, Trash2, Users, ShoppingBag, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
+import { generateWarrantyCode, formatWhatsApp, getToday, getWarrantyExpiryISO } from '@/lib/monare';
 
 type Parceira = { id: string; nome: string; whatsapp: string | null; ativa: boolean };
 type Produto = { id: string; sku: string; nome: string; ativo: boolean };
