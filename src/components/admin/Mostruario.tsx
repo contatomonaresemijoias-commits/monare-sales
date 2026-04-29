@@ -297,6 +297,15 @@ export default function Mostruario() {
                     </div>
                     <Button
                       type="button"
+                      size="sm"
+                      className="h-8 bg-rosa hover:bg-rosa/90 text-white text-xs"
+                      disabled={item.quantidade <= 0}
+                      onClick={() => setVendaItem(item)}
+                    >
+                      <ShoppingBag size={12} className="mr-1" /> Vender
+                    </Button>
+                    <Button
+                      type="button"
                       size="icon"
                       variant="ghost"
                       className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
@@ -311,6 +320,59 @@ export default function Mostruario() {
           )}
         </section>
       </div>
+
+      {/* Modal Vender */}
+      {vendaItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setVendaItem(null)}>
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-serif text-xl text-ink">Registrar Venda</h3>
+              <button onClick={() => setVendaItem(null)} className="text-ink-soft hover:text-ink">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="mb-4 p-3 rounded-xl bg-bege-light">
+              <p className="text-[10px] uppercase tracking-wider text-ink-soft">{vendaItem.produto.sku}</p>
+              <p className="font-medium text-ink">{vendaItem.produto.nome}</p>
+              <p className="text-xs text-ink-soft">Estoque atual: {vendaItem.quantidade}</p>
+            </div>
+            <form onSubmit={registrarVenda} className="space-y-3">
+              <Input
+                placeholder="Nome da cliente"
+                value={vendaForm.cliente_nome}
+                onChange={(e) => setVendaForm({ ...vendaForm, cliente_nome: e.target.value })}
+                required
+              />
+              <Input
+                placeholder="WhatsApp (15) 99999-9999"
+                value={vendaForm.cliente_whatsapp}
+                onChange={(e) => setVendaForm({ ...vendaForm, cliente_whatsapp: formatWhatsApp(e.target.value) })}
+                required
+              />
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                placeholder="Valor da venda (R$)"
+                value={vendaForm.valor}
+                onChange={(e) => setVendaForm({ ...vendaForm, valor: e.target.value })}
+                required
+              />
+              <Input
+                type="date"
+                value={vendaForm.data_venda}
+                onChange={(e) => setVendaForm({ ...vendaForm, data_venda: e.target.value })}
+                max={getToday()}
+                required
+              />
+              <Button type="submit" disabled={vendendo} className="w-full bg-rosa hover:bg-rosa/90">
+                {vendendo ? <Loader2 size={14} className="animate-spin" /> : <ShoppingBag size={14} />}
+                Confirmar Venda
+              </Button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
