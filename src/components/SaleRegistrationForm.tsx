@@ -112,6 +112,8 @@ export default function SaleRegistrationForm() {
       errs.cliente_nome = 'Nome obrigatório (mín. 3 caracteres).';
     const digits = form.cliente_whatsapp.replace(/\D/g, '');
     if (digits.length !== 11) errs.cliente_whatsapp = 'WhatsApp inválido. Use (99) 99999-9999.';
+    const valor = parseFloat((form.valor_venda || '').replace(',', '.'));
+    if (!valor || valor <= 0) errs.valor_venda = 'Informe o valor da venda (R$).';
     if (!form.data_venda) errs.data_venda = 'Data obrigatória.';
     if (!form.termo_aceito) errs.termo_aceito = 'Você precisa confirmar a entrega da peça.';
     return errs;
@@ -128,6 +130,7 @@ export default function SaleRegistrationForm() {
     setSubmitting(true);
     try {
       const codigo_garantia = generateWarrantyCode();
+      const valor = parseFloat(form.valor_venda.replace(',', '.'));
       const { data, error } = await supabase
         .from('vendas')
         .insert({
@@ -140,11 +143,11 @@ export default function SaleRegistrationForm() {
           codigo_garantia,
           termo_aceito: true,
           validade_garantia: getWarrantyExpiryISO(form.data_venda),
+          valor_venda: valor,
         })
         .select()
         .single();
       if (error) {
-        // Mensagens vindas do trigger no Postgres
         if (error.message.includes('mostruário atual')) {
           setErrors({ sku: 'Este item não consta no seu mostruário atual' });
         } else if (error.message.includes('Estoque esgotado')) {
@@ -159,7 +162,7 @@ export default function SaleRegistrationForm() {
         cliente_nome: form.cliente_nome,
         cliente_whatsapp: form.cliente_whatsapp,
       });
-      setForm({ sku: '', cliente_nome: '', cliente_whatsapp: '', data_venda: getToday(), termo_aceito: false });
+      setForm({ sku: '', cliente_nome: '', cliente_whatsapp: '', valor_venda: '', data_venda: getToday(), termo_aceito: false });
       setProduto(null);
       setSkuStatus('idle');
       setSkuMessage('');
