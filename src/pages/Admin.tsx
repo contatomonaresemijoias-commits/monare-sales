@@ -1,10 +1,10 @@
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Package, Users, Boxes, UserCog } from 'lucide-react';
+import { ArrowLeft, Package, Boxes, UserCog, Receipt } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Mostruario from '@/components/admin/Mostruario';
-import Parceiras from '@/components/admin/Parceiras';
 import Produtos from '@/components/admin/Produtos';
 import Vendedoras from '@/components/admin/Vendedoras';
+import Vendas from '@/components/admin/Vendas';
 
 export default function Admin() {
   return (
@@ -29,15 +29,15 @@ export default function Admin() {
           <TabsList className="grid w-full grid-cols-4 bg-white/70 border border-bege">
             <TabsTrigger value="mostruario" className="data-[state=active]:bg-rosa data-[state=active]:text-white">
               <Boxes size={14} className="mr-1.5" />
-              <span className="hidden sm:inline">Gestão de </span>Mostruário
+              Estoque
             </TabsTrigger>
             <TabsTrigger value="vendedoras" className="data-[state=active]:bg-rosa data-[state=active]:text-white">
               <UserCog size={14} className="mr-1.5" />
-              Vendedoras
+              Revendedoras
             </TabsTrigger>
-            <TabsTrigger value="parceiras" className="data-[state=active]:bg-rosa data-[state=active]:text-white">
-              <Users size={14} className="mr-1.5" />
-              Parceiras
+            <TabsTrigger value="vendas" className="data-[state=active]:bg-rosa data-[state=active]:text-white">
+              <Receipt size={14} className="mr-1.5" />
+              Vendas
             </TabsTrigger>
             <TabsTrigger value="produtos" className="data-[state=active]:bg-rosa data-[state=active]:text-white">
               <Package size={14} className="mr-1.5" />
@@ -51,8 +51,8 @@ export default function Admin() {
           <TabsContent value="vendedoras" className="mt-6">
             <Vendedoras />
           </TabsContent>
-          <TabsContent value="parceiras" className="mt-6">
-            <Parceiras />
+          <TabsContent value="vendas" className="mt-6">
+            <Vendas />
           </TabsContent>
           <TabsContent value="produtos" className="mt-6">
             <Produtos />

@@ -22,6 +22,7 @@ export default function SaleRegistrationForm() {
     sku: '',
     cliente_nome: '',
     cliente_whatsapp: '',
+    valor_venda: '',
     data_venda: getToday(),
     termo_aceito: false,
   });
@@ -111,6 +112,8 @@ export default function SaleRegistrationForm() {
       errs.cliente_nome = 'Nome obrigatório (mín. 3 caracteres).';
     const digits = form.cliente_whatsapp.replace(/\D/g, '');
     if (digits.length !== 11) errs.cliente_whatsapp = 'WhatsApp inválido. Use (99) 99999-9999.';
+    const valor = parseFloat((form.valor_venda || '').replace(',', '.'));
+    if (!valor || valor <= 0) errs.valor_venda = 'Informe o valor da venda (R$).';
     if (!form.data_venda) errs.data_venda = 'Data obrigatória.';
     if (!form.termo_aceito) errs.termo_aceito = 'Você precisa confirmar a entrega da peça.';
     return errs;
@@ -127,6 +130,7 @@ export default function SaleRegistrationForm() {
     setSubmitting(true);
     try {
       const codigo_garantia = generateWarrantyCode();
+      const valor = parseFloat(form.valor_venda.replace(',', '.'));
       const { data, error } = await supabase
         .from('vendas')
         .insert({
@@ -139,11 +143,11 @@ export default function SaleRegistrationForm() {
           codigo_garantia,
           termo_aceito: true,
           validade_garantia: getWarrantyExpiryISO(form.data_venda),
+          valor_venda: valor,
         })
         .select()
         .single();
       if (error) {
-        // Mensagens vindas do trigger no Postgres
         if (error.message.includes('mostruário atual')) {
           setErrors({ sku: 'Este item não consta no seu mostruário atual' });
         } else if (error.message.includes('Estoque esgotado')) {
@@ -158,7 +162,7 @@ export default function SaleRegistrationForm() {
         cliente_nome: form.cliente_nome,
         cliente_whatsapp: form.cliente_whatsapp,
       });
-      setForm({ sku: '', cliente_nome: '', cliente_whatsapp: '', data_venda: getToday(), termo_aceito: false });
+      setForm({ sku: '', cliente_nome: '', cliente_whatsapp: '', valor_venda: '', data_venda: getToday(), termo_aceito: false });
       setProduto(null);
       setSkuStatus('idle');
       setSkuMessage('');
@@ -265,6 +269,21 @@ export default function SaleRegistrationForm() {
               className={inputBase}
             />
             {errors.cliente_whatsapp && <p className="mt-1.5 text-xs text-destructive">{errors.cliente_whatsapp}</p>}
+          </div>
+
+          <div>
+            <label className={labelBase}>Valor da Venda (R$)</label>
+            <input
+              name="valor_venda"
+              type="number"
+              step="0.01"
+              min="0.01"
+              value={form.valor_venda}
+              onChange={handleChange}
+              placeholder="0,00"
+              className={inputBase}
+            />
+            {errors.valor_venda && <p className="mt-1.5 text-xs text-destructive">{errors.valor_venda}</p>}
           </div>
 
           <div>
