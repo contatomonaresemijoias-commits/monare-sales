@@ -22,6 +22,7 @@ export default function SaleRegistrationForm() {
     sku: '',
     cliente_nome: '',
     cliente_whatsapp: '',
+    valor_venda: '',
     data_venda: getToday(),
     termo_aceito: false,
   });
