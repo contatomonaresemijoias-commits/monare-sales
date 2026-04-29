@@ -27,6 +27,42 @@ export default function Mostruario() {
   const [addSku, setAddSku] = useState('');
   const [addQty, setAddQty] = useState(1);
   const [adding, setAdding] = useState(false);
+  const [vendaItem, setVendaItem] = useState<EstoqueItem | null>(null);
+  const [vendaForm, setVendaForm] = useState({ cliente_nome: '', cliente_whatsapp: '', valor: '', data_venda: getToday() });
+  const [vendendo, setVendendo] = useState(false);
+
+  async function registrarVenda(e: React.FormEvent) {
+    e.preventDefault();
+    if (!vendaItem || !selected) return;
+    const valor = parseFloat(vendaForm.valor.replace(',', '.'));
+    const wa = vendaForm.cliente_whatsapp.replace(/\D/g, '');
+    if (!vendaForm.cliente_nome.trim() || wa.length !== 11 || !valor || valor <= 0) {
+      toast({ title: 'Preencha cliente, WhatsApp válido e valor.', variant: 'destructive' });
+      return;
+    }
+    setVendendo(true);
+    const { error } = await supabase.from('vendas').insert({
+      parceira_id: selected,
+      produto_id: vendaItem.produto_id,
+      produto_nome: vendaItem.produto.nome,
+      cliente_nome: vendaForm.cliente_nome.trim(),
+      cliente_whatsapp: wa,
+      data_venda: vendaForm.data_venda,
+      codigo_garantia: generateWarrantyCode(),
+      termo_aceito: true,
+      validade_garantia: getWarrantyExpiryISO(vendaForm.data_venda),
+      valor_venda: valor,
+    });
+    setVendendo(false);
+    if (error) {
+      toast({ title: 'Erro ao registrar venda', description: error.message, variant: 'destructive' });
+      return;
+    }
+    toast({ title: 'Venda registrada', description: 'Estoque atualizado e comissão calculada.' });
+    setVendaItem(null);
+    setVendaForm({ cliente_nome: '', cliente_whatsapp: '', valor: '', data_venda: getToday() });
+    if (selected) loadEstoque(selected);
+  }
 
   useEffect(() => {
     (async () => {
