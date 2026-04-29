@@ -272,6 +272,21 @@ export default function SaleRegistrationForm() {
           </div>
 
           <div>
+            <label className={labelBase}>Valor da Venda (R$)</label>
+            <input
+              name="valor_venda"
+              type="number"
+              step="0.01"
+              min="0.01"
+              value={form.valor_venda}
+              onChange={handleChange}
+              placeholder="0,00"
+              className={inputBase}
+            />
+            {errors.valor_venda && <p className="mt-1.5 text-xs text-destructive">{errors.valor_venda}</p>}
+          </div>
+
+          <div>
             <label className={labelBase}>Data da Venda</label>
             <input
               type="date"
