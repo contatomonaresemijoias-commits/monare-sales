@@ -14,6 +14,47 @@ export type Database = {
   }
   public: {
     Tables: {
+      ciclos_mostruario: {
+        Row: {
+          aberto_em: string
+          created_at: string
+          fechado_em: string | null
+          id: string
+          observacao: string | null
+          parceira_id: string
+          total_comissao: number
+          total_vendas: number
+        }
+        Insert: {
+          aberto_em?: string
+          created_at?: string
+          fechado_em?: string | null
+          id?: string
+          observacao?: string | null
+          parceira_id: string
+          total_comissao?: number
+          total_vendas?: number
+        }
+        Update: {
+          aberto_em?: string
+          created_at?: string
+          fechado_em?: string | null
+          id?: string
+          observacao?: string | null
+          parceira_id?: string
+          total_comissao?: number
+          total_vendas?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ciclos_mostruario_parceira_id_fkey"
+            columns: ["parceira_id"]
+            isOneToOne: false
+            referencedRelation: "parceiras"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       estoque_parceiras: {
         Row: {
           created_at: string
@@ -59,6 +100,7 @@ export type Database = {
       parceiras: {
         Row: {
           ativa: boolean
+          comissao_percentual: number
           created_at: string
           id: string
           nome: string
@@ -66,6 +108,7 @@ export type Database = {
         }
         Insert: {
           ativa?: boolean
+          comissao_percentual?: number
           created_at?: string
           id?: string
           nome: string
@@ -73,6 +116,7 @@ export type Database = {
         }
         Update: {
           ativa?: boolean
+          comissao_percentual?: number
           created_at?: string
           id?: string
           nome?: string
@@ -165,9 +209,12 @@ export type Database = {
       }
       vendas: {
         Row: {
+          ciclo_id: string | null
           cliente_nome: string
           cliente_whatsapp: string
           codigo_garantia: string
+          comissao_percentual: number | null
+          comissao_valor: number | null
           created_at: string
           data_venda: string
           estoque_id: string | null
@@ -178,11 +225,15 @@ export type Database = {
           produto_nome: string
           termo_aceito: boolean
           validade_garantia: string | null
+          valor_venda: number | null
         }
         Insert: {
+          ciclo_id?: string | null
           cliente_nome: string
           cliente_whatsapp: string
           codigo_garantia: string
+          comissao_percentual?: number | null
+          comissao_valor?: number | null
           created_at?: string
           data_venda: string
           estoque_id?: string | null
@@ -193,11 +244,15 @@ export type Database = {
           produto_nome: string
           termo_aceito?: boolean
           validade_garantia?: string | null
+          valor_venda?: number | null
         }
         Update: {
+          ciclo_id?: string | null
           cliente_nome?: string
           cliente_whatsapp?: string
           codigo_garantia?: string
+          comissao_percentual?: number | null
+          comissao_valor?: number | null
           created_at?: string
           data_venda?: string
           estoque_id?: string | null
@@ -208,8 +263,16 @@ export type Database = {
           produto_nome?: string
           termo_aceito?: boolean
           validade_garantia?: string | null
+          valor_venda?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "vendas_ciclo_id_fkey"
+            columns: ["ciclo_id"]
+            isOneToOne: false
+            referencedRelation: "ciclos_mostruario"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "vendas_estoque_id_fkey"
             columns: ["estoque_id"]
@@ -239,6 +302,10 @@ export type Database = {
     }
     Functions: {
       current_parceira_id: { Args: never; Returns: string }
+      fechar_ciclo: {
+        Args: { _observacao?: string; _parceira_id: string }
+        Returns: string
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -255,6 +322,16 @@ export type Database = {
           data_venda: string
           id: string
           produto_nome: string
+        }[]
+      }
+      saldo_ciclo_aberto: {
+        Args: { _parceira_id: string }
+        Returns: {
+          aberto_em: string
+          ciclo_id: string
+          qtd_vendas: number
+          total_comissao: number
+          total_vendas: number
         }[]
       }
     }
