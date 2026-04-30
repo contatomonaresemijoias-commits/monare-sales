@@ -45,6 +45,12 @@ export default function SaleRegistrationForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!produto || skuStatus !== 'found' || !form.termo_aceito) return;
+
+    if (!parceiraId) {
+      setErrors({ _global: 'Sessão inválida. Faça login novamente.' });
+      return;
+    }
+
     setSubmitting(true);
     try {
       const { data, error } = await supabase.from('vendas').insert({
@@ -64,7 +70,9 @@ export default function SaleRegistrationForm() {
       setVendaFinalizada(data);
     } catch (err: any) {
       setErrors({ _global: err.message });
-    } finally { setSubmitting(false); }
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -74,9 +82,9 @@ export default function SaleRegistrationForm() {
         <p className="text-ink-soft text-xs tracking-widest uppercase mt-2">Registro de Venda</p>
       </div>
 
-      <div className="bg-white rounded-3xl shadow-luxe border p-6 space-y-5">
+      <form onSubmit={handleSubmit} className="bg-white rounded-3xl shadow-luxe border p-6 space-y-5">
         {errors._global && <div className="p-3 bg-red-50 text-red-600 text-xs rounded-xl">{errors._global}</div>}
-        
+
         <div>
           <label className="text-xs font-semibold uppercase text-ink-soft mb-2 block">Código (SKU)</label>
           <input name="sku" value={form.sku} onChange={(e) => { setForm({...form, sku: e.target.value.toUpperCase()}); lookupSKU(e.target.value); }} className="w-full p-4 border rounded-2xl" placeholder="SKU001" />
@@ -94,10 +102,15 @@ export default function SaleRegistrationForm() {
           </span>
         </label>
 
-        <button type="submit" disabled={submitting} className="w-full bg-rosa text-white p-4 rounded-2xl font-bold uppercase tracking-widest shadow-lg active:scale-95 transition-all">
+        <button
+          type="submit"
+          disabled={submitting || !produto || !form.termo_aceito}
+          className="w-full bg-rosa text-white p-4 rounded-2xl font-bold uppercase tracking-widest shadow-lg active:scale-95 transition-all disabled:opacity-50"
+        >
           {submitting ? 'Processando...' : 'Finalizar Venda'}
         </button>
-      </div>
+      </form>
+
       {vendaFinalizada && <SuccessModal venda={vendaFinalizada} onClose={() => setVendaFinalizada(null)} />}
     </div>
   );
