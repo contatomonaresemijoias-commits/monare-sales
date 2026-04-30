@@ -62,6 +62,7 @@ export type Database = {
           parceira_id: string
           produto_id: string
           quantidade: number
+          quantidade_vendida: number
           updated_at: string
         }
         Insert: {
@@ -70,6 +71,7 @@ export type Database = {
           parceira_id: string
           produto_id: string
           quantidade?: number
+          quantidade_vendida?: number
           updated_at?: string
         }
         Update: {
@@ -78,6 +80,7 @@ export type Database = {
           parceira_id?: string
           produto_id?: string
           quantidade?: number
+          quantidade_vendida?: number
           updated_at?: string
         }
         Relationships: [
@@ -131,6 +134,7 @@ export type Database = {
           descricao: string | null
           id: string
           nome: string
+          preco_venda: number
           sku: string
         }
         Insert: {
@@ -139,6 +143,7 @@ export type Database = {
           descricao?: string | null
           id?: string
           nome: string
+          preco_venda?: number
           sku: string
         }
         Update: {
@@ -147,6 +152,7 @@ export type Database = {
           descricao?: string | null
           id?: string
           nome?: string
+          preco_venda?: number
           sku?: string
         }
         Relationships: []
