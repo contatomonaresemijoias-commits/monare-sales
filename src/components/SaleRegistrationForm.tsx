@@ -89,10 +89,10 @@ export default function SaleRegistrationForm() {
       const whatsapp_limpo = form.cliente_whatsapp.replace(/\D/g, '');
       const validade_garantia = getWarrantyExpiryISO(form.data_venda);
 
-      // CORREÇÃO APLICADA AQUI: usando parceira_id ao invés de vendedora_id
       const { data, error } = await supabase.from('vendas').insert({
         parceira_id: parceiraId,
         produto_id: produto.id,
+        produto_nome: produto.nome, // <--- O BANCO DE DADOS ESTAVA EXIGINDO ESTA LINHA!
         valor_venda: valor,
         cliente_nome: form.cliente_nome.trim(),
         cliente_whatsapp: whatsapp_limpo,
