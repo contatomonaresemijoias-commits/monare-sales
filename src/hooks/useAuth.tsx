@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
-type Profile = { id: string; email: string | null; role: string | null; parceira_id: string | null };
+type Profile = { id: string; role: string | null; parceira_id: string | null };
+
 type AuthCtx = {
   session: Session | null;
   user: User | null;
@@ -22,10 +23,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   async function loadExtras(uid: string) {
-    // CORRIGIDO: busca por 'id' em vez de 'user_id'
     const { data: prof } = await supabase
       .from('profiles')
-      .select('id, email, role, parceira_id')
+      .select('id, role, parceira_id')
       .eq('id', uid)
       .maybeSingle();
 
