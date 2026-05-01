@@ -2,13 +2,11 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
-type Profile = { id: string; parceira_id: string | null; display_name: string | null; role: string | null };
-type Role = 'admin' | 'parceira';
+type Profile = { id: string; email: string | null; role: string | null; parceira_id: string | null };
 type AuthCtx = {
   session: Session | null;
   user: User | null;
   profile: Profile | null;
-  roles: Role[];
   isAdmin: boolean;
   loading: boolean;
   signOut: () => Promise<void>;
@@ -21,28 +19,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
 
   async function loadExtras(uid: string) {
     // CORRIGIDO: busca por 'id' em vez de 'user_id'
     const { data: prof } = await supabase
       .from('profiles')
-      .select('id, parceira_id, display_name, role')
+      .select('id, email, role, parceira_id')
       .eq('id', uid)
       .maybeSingle();
 
-    const finalProfile = prof as Profile | null;
-    setProfile(finalProfile);
-
-    // Define roles a partir do campo role do profile
-    if (finalProfile?.role === 'admin') {
-      setRoles(['admin']);
-    } else if (finalProfile?.role === 'vendedora' || finalProfile?.role === 'parceira') {
-      setRoles(['parceira']);
-    } else {
-      setRoles([]);
-    }
+    setProfile(prof as Profile | null);
   }
 
   useEffect(() => {
@@ -60,7 +47,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }, 0);
       } else {
         setProfile(null);
-        setRoles([]);
         setLoading(false);
       }
     });
@@ -92,8 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session,
         user,
         profile,
-        roles,
-        isAdmin: roles.includes('admin'),
+        isAdmin: profile?.role === 'admin',
         loading,
         signOut,
         refresh,
