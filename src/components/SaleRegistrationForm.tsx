@@ -28,7 +28,7 @@ interface SaleFormData {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function SaleRegistrationForm() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
 
   const [formData, setFormData] = useState<SaleFormData>({
     sku: "",
