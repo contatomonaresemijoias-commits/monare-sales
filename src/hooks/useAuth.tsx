@@ -8,6 +8,7 @@ type AuthCtx = {
   session: Session | null;
   user: User | null;
   profile: Profile | null;
+  roles: string[];
   isAdmin: boolean;
   loading: boolean;
   signOut: () => Promise<void>;
@@ -20,6 +21,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [roles, setRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   async function loadExtras(uid: string) {
@@ -46,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }, 0);
       } else {
         setProfile(null);
+        setRoles([]);
         setLoading(false);
       }
     });
@@ -77,7 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session,
         user,
         profile,
-        isAdmin: profile?.role === 'admin',
+        roles,
+        isAdmin: roles.includes('admin'),
         loading,
         signOut,
         refresh,
