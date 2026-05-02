@@ -1,53 +1,66 @@
-export const INSTAGRAM_URL = 'https://www.instagram.com/monare.oficial/';
+// ─────────────────────────────────────────────────────────────────────────────
+// src/lib/monare.ts
+// Funções auxiliares da Monarê Semijoias
+// ─────────────────────────────────────────────────────────────────────────────
 
-export function getCertificateBaseUrl() {
-  if (typeof window !== 'undefined') {
-    return `${window.location.origin}/garantia`;
-  }
-  return '/garantia';
+// Texto exato do termo de garantia — fonte única da verdade.
+// Referenciado pelo SaleRegistrationForm e qualquer outro componente
+// que precise exibir este termo.
+export const WARRANTY_TEXT =
+  "concordo que estou entregando as peças em plenas condições com garantia de 12 meses.";
+
+export const WARRANTY_MONTHS = 12;
+
+/**
+ * Retorna o texto do checkbox de garantia.
+ * Usar esta função garante consistência em todos os formulários.
+ */
+export function getWarrantyCheckboxText(): string {
+  return WARRANTY_TEXT;
 }
 
-export function generateWarrantyCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = 'MNR-';
-  for (let i = 0; i < 8; i++) {
-    if (i === 4) code += '-';
-    code += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return code;
+/**
+ * Alias mantido por compatibilidade com código anterior.
+ * @deprecated Use `getWarrantyCheckboxText()` diretamente.
+ */
+export function formatWarrantyText(): string {
+  return getWarrantyCheckboxText();
 }
 
-export function formatWhatsApp(value: string) {
-  const digits = value.replace(/\D/g, '').slice(0, 11);
-  if (digits.length <= 2) return `(${digits}`;
-  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
-  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+/**
+ * Calcula a data de expiração da garantia a partir da data de venda.
+ * @param dataVenda - ISO string da data da venda
+ * @returns ISO string da data de expiração
+ */
+export function calcularExpiracaoGarantia(dataVenda: string): string {
+  const data = new Date(dataVenda);
+  data.setMonth(data.getMonth() + WARRANTY_MONTHS);
+  return data.toISOString();
 }
 
-export function getMinDate() {
-  const d = new Date();
-  d.setDate(d.getDate() - 3);
-  return d.toISOString().split('T')[0];
+/**
+ * Formata valor monetário no padrão brasileiro.
+ * Ex: 129.9 → "R$ 129,90"
+ */
+export function formatCurrency(value: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(value);
 }
 
-export function getToday() {
-  return new Date().toISOString().split('T')[0];
+/**
+ * Normaliza SKU para busca: uppercase e remove espaços.
+ * Ex: "mn-an 001" → "MN-AN-001" (se o padrão usar hífen)
+ */
+export function normalizeSKU(sku: string): string {
+  return sku.trim().toUpperCase().replace(/\s+/g, "");
 }
 
-export function formatDateBR(iso?: string | null) {
-  if (!iso) return '—';
-  const date = iso.includes('T') ? iso.split('T')[0] : iso;
-  const [y, m, d] = date.split('-');
-  return `${d}/${m}/${y}`;
-}
-
-export function getWarrantyExpiryISO(iso: string) {
-  const d = new Date(iso);
-  d.setFullYear(d.getFullYear() + 1);
-  return d.toISOString().split('T')[0];
-}
-
-export function getWarrantyExpiryBR(iso?: string | null) {
-  if (!iso) return '—';
-  return formatDateBR(getWarrantyExpiryISO(iso.includes('T') ? iso.split('T')[0] : iso));
+/**
+ * Formata data ISO para exibição no padrão brasileiro.
+ * Ex: "2026-05-01T10:00:00Z" → "01/05/2026"
+ */
+export function formatDate(isoString: string): string {
+  return new Date(isoString).toLocaleDateString("pt-BR");
 }
