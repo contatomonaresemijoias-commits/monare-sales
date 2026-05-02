@@ -32,67 +32,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const initialized = useRef(false);
 
   async function loadExtras(uid: string) {
-    // Busca profile pelo id (que é o auth.uid)
-    // Colunas reais: id, email, role, parceira_id
+    // Busca profile pelo id (= auth.uid)
+    // Sem user_roles — role vem direto de profiles.role
     const { data: prof } = await supabase
       .from('profiles')
       .select('id, email, role, parceira_id')
       .eq('id', uid)
       .maybeSingle();
 
-    setProfile(prof as Profile | null);
-
-    // Role vem da tabela profiles.role E da tabela user_roles
-    const profileRole = prof?.role ? [prof.role] : [];
-
-    const { data: rs } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', uid);
-
-    const userRoles = ((rs ?? []) as { role: string }[]).map((r) => r.role);
-
-    // Combina roles de ambas as fontes sem duplicatas
-    const allRoles = Array.from(new Set([...profileRole, ...userRoles]));
-    setRoles(allRoles);
+    const p = prof as Profile | null;
+    setProfile(p);
+    setRoles(p?.role ? [p.role] : []);
   }
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session: s } }) => {
       setSession(s);
       setUser(s?.user ?? null);
-
       if (s?.user) {
         await loadExtras(s.user.id);
       } else {
         setProfile(null);
         setRoles([]);
       }
-
       initialized.current = true;
       setLoading(false);
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (_e, s) => {
       if (!initialized.current) return;
-
       setLoading(true);
       setSession(s);
       setUser(s?.user ?? null);
-
       if (s?.user) {
         await loadExtras(s.user.id);
       } else {
         setProfile(null);
         setRoles([]);
       }
-
       setLoading(false);
     });
 
-    return () => {
-      sub.subscription.unsubscribe();
-    };
+    return () => { sub.subscription.unsubscribe(); };
   }, []);
 
   async function refresh() {
@@ -103,8 +84,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   }
 
-  const isAdmin = roles.includes('admin');
-
   return (
     <Ctx.Provider
       value={{
@@ -112,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         profile,
         roles,
-        isAdmin,
+        isAdmin: roles.includes('admin'),
         loading,
         signOut,
         refresh,
