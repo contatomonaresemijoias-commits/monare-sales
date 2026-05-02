@@ -23,13 +23,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   async function loadExtras(uid: string) {
-    const { data: prof } = await supabase
-      .from('profiles')
-      .select('id, role, parceira_id')
-      .eq('id', uid)
-      .maybeSingle();
-
+    const [{ data: prof }, { data: rs }] = await Promise.all([
+      supabase.from('profiles').select('id, user_id, display_name, parceira_id').eq('user_id', uid).maybeSingle(),
+      supabase.from('user_roles').select('role').eq('user_id', uid),
+    ]);
     setProfile(prof as Profile | null);
+    setRoles(((rs ?? []) as { role: string }[]).map((r) => r.role));
   }
 
   useEffect(() => {
