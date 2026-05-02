@@ -2,14 +2,6 @@ import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
-// Colunas reais confirmadas no banco:
-// produtos:          id, codigo_sku, nome, preco_base
-// estoque_parceiras: id, parceira_id (= parceiras.id), produto_id, quantidade
-// profiles:          id (= auth.uid), email, role, parceira_id (= parceiras.id)
-// vendas:            id, codigo_garantia, parceira_id, produto_id, cliente_nome,
-//                    cliente_whatsapp, data_venda, validade_garantia, termo_aceito,
-//                    valor_venda, ciclo_id, vendedora_id, comissao_percentual, comissao_valor
-
 function gerarCodigoGarantia(): string {
   return "MN-" + Date.now().toString(36).toUpperCase();
 }
@@ -35,7 +27,9 @@ interface FormData {
 }
 
 export function SaleRegistrationForm() {
-  const { user } = useAuth();
+  // FIX: usa profile direto do contexto — já tem o parceira_id correto
+  // Sem busca extra ao Supabase que estava filtrando pela coluna errada
+  const { user, profile } = useAuth();
 
   const [form, setForm] = useState<FormData>({
     codigo_sku: "",
@@ -57,12 +51,6 @@ export function SaleRegistrationForm() {
 
   const [errorMsg, setErrorMsg] = useState("");
 
-  // ── LOOKUP SKU ────────────────────────────────────────────────────────────
-  // Fluxo:
-  // 1. Busca profiles onde id = auth.uid() → pega parceira_id real
-  // 2. Busca produto por codigo_sku
-  // 3. Verifica estoque_parceiras onde parceira_id = parceira_id real
-
   const lookupSKU = useCallback(
     async (sku: string) => {
       const skuLimpo = sku.trim().toUpperCase();
@@ -73,26 +61,12 @@ export function SaleRegistrationForm() {
         return;
       }
 
-      if (!user?.id) return;
+      if (!user?.id || !profile?.parceira_id) return;
+
       setSkuStatus("loading");
 
       try {
-        // Passo 1: pega o parceira_id real do perfil logado
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("parceira_id")
-          .eq("id", user.id)
-          .maybeSingle();
-
-        if (profileError) throw profileError;
-        if (!profile?.parceira_id) {
-          setSkuStatus("no_stock");
-          return;
-        }
-
-        const parceiraId = profile.parceira_id;
-
-        // Passo 2: busca produto por codigo_sku
+        // Passo 1: busca produto por codigo_sku
         const { data: produto, error: produtoError } = await supabase
           .from("produtos")
           .select("id, nome, preco_base, codigo_sku")
@@ -100,17 +74,18 @@ export function SaleRegistrationForm() {
           .maybeSingle();
 
         if (produtoError) throw produtoError;
+
         if (!produto) {
           setSkuStatus("not_found");
           setForm((prev) => ({ ...prev, produto_id: "", nome_produto: "", preco_unitario: 0 }));
           return;
         }
 
-        // Passo 3: verifica estoque com parceira_id real
+        // Passo 2: verifica estoque usando parceira_id do contexto (já correto)
         const { data: estoque, error: estoqueError } = await supabase
           .from("estoque_parceiras")
           .select("quantidade")
-          .eq("parceira_id", parceiraId)
+          .eq("parceira_id", profile.parceira_id)
           .eq("produto_id", produto.id)
           .maybeSingle();
 
@@ -135,13 +110,11 @@ export function SaleRegistrationForm() {
         setSkuStatus("not_found");
       }
     },
-    [user?.id]
+    [user?.id, profile?.parceira_id]
   );
 
-  // ── SUBMIT ────────────────────────────────────────────────────────────────
-
   const handleSubmit = async () => {
-    if (!user?.id) return;
+    if (!user?.id || !profile?.parceira_id) return;
 
     if (!form.produto_id) {
       setErrorMsg("Busque um SKU válido antes de registrar.");
@@ -164,17 +137,10 @@ export function SaleRegistrationForm() {
     setErrorMsg("");
 
     try {
-      // Pega parceira_id real novamente para o insert
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("parceira_id")
-        .eq("id", user.id)
-        .maybeSingle();
-
       const { error } = await supabase
         .from("vendas")
         .insert({
-          parceira_id: profile?.parceira_id ?? null,
+          parceira_id: profile.parceira_id,
           vendedora_id: user.id,
           produto_id: form.produto_id,
           cliente_nome: form.cliente_nome.trim(),
@@ -207,13 +173,10 @@ export function SaleRegistrationForm() {
     }
   };
 
-  // ── RENDER ────────────────────────────────────────────────────────────────
-
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-16">
       <div className="w-full max-w-md">
 
-        {/* Header */}
         <div className="text-center mb-10">
           <p className="text-[10px] tracking-[0.35em] text-[#9B8E7E] uppercase mb-2">
             Monarê Semijoias
