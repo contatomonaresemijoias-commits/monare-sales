@@ -1,8 +1,13 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
-type Profile = { id: string; user_id: string; display_name: string | null; parceira_id: string | null };
+type Profile = {
+  id: string;
+  user_id: string;
+  display_name: string | null;
+  parceira_id: string | null;
+};
 
 type AuthCtx = {
   session: Session | null;
@@ -24,50 +29,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [roles, setRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // FIX: ref para evitar race condition entre onAuthStateChange e getSession.
+  // Somente UMA das duas pode chamar loadExtras — a que chegar primeiro.
+  // Depois que initialized = true, onAuthStateChange assume o controle exclusivo.
+  const initialized = useRef(false);
+
   async function loadExtras(uid: string) {
     const [{ data: prof }, { data: rs }] = await Promise.all([
-      supabase.from('profiles').select('id, user_id, display_name, parceira_id').eq('user_id', uid).maybeSingle(),
+      supabase
+        .from('profiles')
+        .select('id, user_id, display_name, parceira_id')
+        .eq('user_id', uid)
+        .maybeSingle(),
       supabase.from('user_roles').select('role').eq('user_id', uid),
     ]);
+
     setProfile(prof as Profile | null);
     setRoles(((rs ?? []) as { role: string }[]).map((r) => r.role));
   }
 
   useEffect(() => {
-    let active = true;
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
-      setLoading(true);
+    // Passo 1: getSession resolve a sessão inicial.
+    // É a única fonte de verdade no boot — onAuthStateChange não roda aqui.
+    supabase.auth.getSession().then(async ({ data: { session: s } }) => {
       setSession(s);
       setUser(s?.user ?? null);
+
       if (s?.user) {
-        setTimeout(() => {
-          loadExtras(s.user.id).finally(() => {
-            if (active) setLoading(false);
-          });
-        }, 0);
+        await loadExtras(s.user.id);
       } else {
         setProfile(null);
         setRoles([]);
-        setLoading(false);
       }
+
+      initialized.current = true; // libera o listener para eventos futuros
+      setLoading(false);
     });
 
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
+    // Passo 2: onAuthStateChange lida APENAS com mudanças após o boot
+    // (login, logout, refresh de token). Ignora o evento inicial porque
+    // initialized.current ainda é false nesse momento.
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_e, s) => {
+      if (!initialized.current) return; // ignora disparo do boot
+
+      setLoading(true);
       setSession(s);
       setUser(s?.user ?? null);
-      if (s?.user) loadExtras(s.user.id).finally(() => setLoading(false));
-      else setLoading(false);
+
+      if (s?.user) {
+        await loadExtras(s.user.id);
+      } else {
+        setProfile(null);
+        setRoles([]);
+      }
+
+      setLoading(false);
     });
 
     return () => {
-      active = false;
       sub.subscription.unsubscribe();
     };
   }, []);
 
   async function refresh() {
-    if (user) await loadExtras(user.id);
+    if (user) {
+      await loadExtras(user.id);
+    }
   }
 
   async function signOut() {
