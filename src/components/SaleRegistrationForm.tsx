@@ -1,23 +1,9 @@
 import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { formatWarrantyText } from "@/lib/monare";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface ProductInfo {
-  id: string;
-  nome: string;
-  preco_venda: number;
-  sku: string;
-}
-
-interface StockInfo {
-  quantidade: number;
-}
 
 interface SaleFormData {
-  sku: string;
+  codigo_sku: string;
   produto_id: string;
   nome_produto: string;
   preco_unitario: number;
@@ -25,13 +11,11 @@ interface SaleFormData {
   garantia_aceita: boolean;
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
-
 export function SaleRegistrationForm() {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
 
   const [formData, setFormData] = useState<SaleFormData>({
-    sku: "",
+    codigo_sku: "",
     produto_id: "",
     nome_produto: "",
     preco_unitario: 0,
@@ -49,19 +33,16 @@ export function SaleRegistrationForm() {
 
   const [errorMessage, setErrorMessage] = useState("");
 
-  // ── 1. BUSCA DE SKU CORRIGIDA ─────────────────────────────────────────────
-  //
-  // FIX: A query agora faz dois passos:
-  //   a) Busca o produto na tabela `produtos` pelo SKU
-  //   b) Verifica se a parceira logada tem esse produto em `estoque_parceiras`
-  //      com quantidade > 0
-  //
-  // Antes estava buscando `produtos` sem validar `estoque_parceiras`, causando
-  // o lookup devolver resultado mesmo sem estoque disponível para aquela parceira.
+  // ── LOOKUP DE SKU ─────────────────────────────────────────────────────────
+  // Colunas reais confirmadas:
+  //   produtos: id, codigo_sku, nome, preco_base
+  //   estoque_parceiras: id, parceira_id, produto_id, quantidade
 
   const lookupSKU = useCallback(
     async (sku: string) => {
-      if (!sku || sku.trim().length < 3) {
+      const skuLimpo = sku.trim().toUpperCase();
+
+      if (skuLimpo.length < 2) {
         setSkuStatus("idle");
         setFormData((prev) => ({
           ...prev,
@@ -77,12 +58,12 @@ export function SaleRegistrationForm() {
       setSkuStatus("loading");
 
       try {
-        // Passo A: produto existe?
+        // Passo A: produto existe? Usando codigo_sku (nome real da coluna)
         const { data: produto, error: produtoError } = await supabase
           .from("produtos")
-          .select("id, nome, preco_venda, sku")
-          .eq("sku", sku.trim().toUpperCase())
-          .maybeSingle(); // maybeSingle() → null se não achar, sem erro
+          .select("id, nome, preco_base, codigo_sku")
+          .eq("codigo_sku", skuLimpo)
+          .maybeSingle();
 
         if (produtoError) throw produtoError;
 
@@ -97,7 +78,7 @@ export function SaleRegistrationForm() {
           return;
         }
 
-        // Passo B: a parceira tem estoque desse produto?
+        // Passo B: parceira tem estoque? Usando quantidade (nome real da coluna)
         const { data: estoque, error: estoqueError } = await supabase
           .from("estoque_parceiras")
           .select("quantidade")
@@ -107,8 +88,7 @@ export function SaleRegistrationForm() {
 
         if (estoqueError) throw estoqueError;
 
-        const temEstoque =
-          estoque && (estoque as StockInfo).quantidade > 0;
+        const temEstoque = estoque && estoque.quantidade > 0;
 
         if (!temEstoque) {
           setSkuStatus("no_stock");
@@ -121,13 +101,13 @@ export function SaleRegistrationForm() {
           return;
         }
 
-        // Produto encontrado e com estoque ✓
+        // Tudo ok ✓
         setSkuStatus("found");
         setFormData((prev) => ({
           ...prev,
-          produto_id: (produto as ProductInfo).id,
-          nome_produto: (produto as ProductInfo).nome,
-          preco_unitario: (produto as ProductInfo).preco_venda,
+          produto_id: produto.id,
+          nome_produto: produto.nome,
+          preco_unitario: produto.preco_base,
         }));
       } catch (err) {
         console.error("[lookupSKU] Erro:", err);
@@ -137,28 +117,7 @@ export function SaleRegistrationForm() {
     [user?.id]
   );
 
-  // ── 2. SUBMIT COM FIX DO 403 ──────────────────────────────────────────────
-  //
-  // FIX DO 403:
-  //   O Supabase JS por padrão tenta fazer SELECT da linha após INSERT (RETURNING *).
-  //   Se a RLS policy de SELECT não cobrir a própria linha recém-inserida pelo user,
-  //   o banco retorna 403 no SELECT implícito — mesmo que o INSERT tenha passado.
-  //
-  //   SOLUÇÃO: Encadear `.select("id")` explicitamente e garantir que a policy
-  //   de SELECT na tabela `vendas` seja:
-  //
-  //     CREATE POLICY "parceiras_select_own_vendas"
-  //     ON vendas FOR SELECT
-  //     USING (parceira_id = auth.uid());
-  //
-  //   E a policy de INSERT:
-  //
-  //     CREATE POLICY "parceiras_insert_vendas"
-  //     ON vendas FOR INSERT
-  //     WITH CHECK (parceira_id = auth.uid());
-  //
-  //   O código abaixo usa `.select("id")` para ser explícito e evitar o
-  //   SELECT * implícito que causava o conflito.
+  // ── SUBMIT ────────────────────────────────────────────────────────────────
 
   const handleSubmit = async () => {
     if (!user?.id) return;
@@ -175,30 +134,23 @@ export function SaleRegistrationForm() {
     setErrorMessage("");
 
     try {
-      const codigo_garantia = `MNR-${Date.now().toString(36).toUpperCase()}`;
-      const hoje = new Date().toISOString().split('T')[0];
       const { error } = await supabase
         .from("vendas")
         .insert({
-          parceira_id: profile?.parceira_id ?? null,
+          parceira_id: user.id,
           produto_id: formData.produto_id,
-          produto_nome: formData.nome_produto,
-          cliente_nome: 'Cliente',
-          cliente_whatsapp: '00000000000',
-          data_venda: hoje,
-          codigo_garantia,
-          termo_aceito: formData.garantia_aceita,
-          valor_venda: formData.quantidade * formData.preco_unitario,
+          quantidade: formData.quantidade,
+          preco_unitario: formData.preco_unitario,
+          valor_total: formData.quantidade * formData.preco_unitario,
+          garantia_aceita: formData.garantia_aceita,
         })
         .select("id");
 
       if (error) throw error;
 
       setSubmitStatus("success");
-
-      // Reset form
       setFormData({
-        sku: "",
+        codigo_sku: "",
         produto_id: "",
         nome_produto: "",
         preco_unitario: 0,
@@ -207,108 +159,100 @@ export function SaleRegistrationForm() {
       });
       setSkuStatus("idle");
     } catch (err: any) {
-      console.error("[handleSubmit] Erro ao registrar venda:", err);
+      console.error("[handleSubmit] Erro:", err);
       setSubmitStatus("error");
-
-      // Mensagem amigável baseada no código do erro
-      if (err?.code === "42501" || err?.status === 403) {
-        setErrorMessage(
-          "Permissão negada. Verifique as políticas de RLS no Supabase (ver comentário no código)."
-        );
-      } else {
-        setErrorMessage(err?.message || "Erro ao registrar venda.");
-      }
+      setErrorMessage(err?.message || "Erro ao registrar venda.");
     }
   };
 
-  // ── 3. RENDER ─────────────────────────────────────────────────────────────
-
   const valorTotal = formData.quantidade * formData.preco_unitario;
 
+  // ── RENDER ────────────────────────────────────────────────────────────────
+
   return (
-    <div className="min-h-screen bg-[#FAF9F7] font-['Cormorant_Garamond',serif] flex items-center justify-center px-4 py-12">
-      <div className="w-full max-w-lg">
+    <div className="min-h-screen flex items-center justify-center px-4 py-16">
+      <div className="w-full max-w-md">
 
         {/* Header */}
-        <div className="mb-10 text-center">
-          <p className="text-xs tracking-[0.3em] text-[#9B8E7E] uppercase mb-2">
+        <div className="text-center mb-10">
+          <p className="text-[10px] tracking-[0.35em] text-[#9B8E7E] uppercase mb-2">
             Monarê Semijoias
           </p>
-          <h1 className="text-3xl font-light text-[#2C2825] tracking-wide">
+          <h1 className="text-2xl font-light text-[#2C2825] tracking-widest uppercase">
             Registro de Venda
           </h1>
-          <div className="mt-4 mx-auto w-12 h-px bg-[#C9A96E]" />
+          <div className="mt-4 mx-auto w-10 h-px bg-[#C9A96E]" />
         </div>
 
         {/* Card */}
-        <div className="bg-white border border-[#E8E2DA] shadow-sm rounded-sm p-8 space-y-6">
+        <div className="bg-white/90 backdrop-blur border border-[#E8E2DA] rounded-sm shadow-sm p-8 space-y-7">
 
-          {/* SKU Field */}
+          {/* SKU */}
           <div className="space-y-1.5">
-            <label className="block text-xs tracking-[0.2em] text-[#9B8E7E] uppercase">
+            <label className="block text-[10px] tracking-[0.25em] text-[#9B8E7E] uppercase">
               Código SKU
             </label>
             <div className="relative">
               <input
                 type="text"
-                value={formData.sku}
+                value={formData.codigo_sku}
                 onChange={(e) => {
                   const val = e.target.value.toUpperCase();
-                  setFormData((prev) => ({ ...prev, sku: val }));
+                  setFormData((prev) => ({ ...prev, codigo_sku: val }));
                   lookupSKU(val);
                 }}
                 placeholder="Ex: MN-AN-001"
-                className="w-full border-b border-[#D4CCBF] bg-transparent py-2.5 text-[#2C2825] placeholder-[#C5BBAE] text-sm tracking-wide focus:outline-none focus:border-[#C9A96E] transition-colors"
+                autoComplete="off"
+                className="w-full border-b border-[#D4CCBF] bg-transparent py-2.5 pr-6 text-[#2C2825] placeholder-[#C5BBAE] text-sm tracking-wide focus:outline-none focus:border-[#C9A96E] transition-colors"
               />
-              {/* Status indicator */}
-              <div className="absolute right-0 top-2.5">
+              <div className="absolute right-0 top-3">
                 {skuStatus === "loading" && (
-                  <div className="w-4 h-4 border border-[#C9A96E] border-t-transparent rounded-full animate-spin" />
+                  <div className="w-3.5 h-3.5 border border-[#C9A96E] border-t-transparent rounded-full animate-spin" />
                 )}
                 {skuStatus === "found" && (
-                  <svg className="w-4 h-4 text-[#7A9E7E]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
+                  <svg className="w-3.5 h-3.5 text-[#7A9E7E]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 )}
                 {(skuStatus === "not_found" || skuStatus === "no_stock") && (
-                  <svg className="w-4 h-4 text-[#C47A5A]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
+                  <svg className="w-3.5 h-3.5 text-[#C47A5A]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 )}
               </div>
             </div>
-
-            {/* SKU feedback */}
             {skuStatus === "not_found" && (
-              <p className="text-xs text-[#C47A5A] tracking-wide">
-                SKU não encontrado no catálogo.
-              </p>
+              <p className="text-[11px] text-[#C47A5A]">SKU não encontrado no catálogo.</p>
             )}
             {skuStatus === "no_stock" && (
-              <p className="text-xs text-[#C47A5A] tracking-wide">
-                Produto sem estoque disponível para sua conta.
-              </p>
+              <p className="text-[11px] text-[#C47A5A]">Este produto não consta no seu mostruário.</p>
             )}
           </div>
 
-          {/* Produto Info (aparece quando SKU é encontrado) */}
-          {skuStatus === "found" && formData.nome_produto && (
-            <div className="bg-[#FAF9F7] border border-[#E8E2DA] rounded-sm p-4 space-y-1">
-              <p className="text-xs tracking-[0.2em] text-[#9B8E7E] uppercase">
+          {/* Produto identificado — somente leitura */}
+          {skuStatus === "found" && (
+            <div className="bg-[#FAF9F7] border border-[#E8E2DA] rounded-sm p-4 space-y-3">
+              <p className="text-[10px] tracking-[0.25em] text-[#9B8E7E] uppercase">
                 Produto identificado
               </p>
-              <p className="text-[#2C2825] text-sm font-medium tracking-wide">
-                {formData.nome_produto}
-              </p>
-              <p className="text-[#C9A96E] text-sm tracking-wider">
-                R$ {formData.preco_unitario.toFixed(2).replace(".", ",")}
-              </p>
+              <div className="space-y-0.5">
+                <p className="text-[10px] tracking-[0.2em] text-[#B5A99A] uppercase">Nome</p>
+                <p className="text-[#2C2825] text-sm tracking-wide font-medium">
+                  {formData.nome_produto}
+                </p>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-[10px] tracking-[0.2em] text-[#B5A99A] uppercase">Valor unitário</p>
+                <p className="text-[#C9A96E] text-sm tracking-wider">
+                  R$ {formData.preco_unitario.toFixed(2).replace(".", ",")}
+                </p>
+              </div>
             </div>
           )}
 
           {/* Quantidade */}
           <div className="space-y-1.5">
-            <label className="block text-xs tracking-[0.2em] text-[#9B8E7E] uppercase">
+            <label className="block text-[10px] tracking-[0.25em] text-[#9B8E7E] uppercase">
               Quantidade
             </label>
             <input
@@ -325,10 +269,10 @@ export function SaleRegistrationForm() {
             />
           </div>
 
-          {/* Valor Total */}
+          {/* Total */}
           {skuStatus === "found" && (
-            <div className="pt-2 border-t border-[#E8E2DA] flex justify-between items-center">
-              <span className="text-xs tracking-[0.2em] text-[#9B8E7E] uppercase">
+            <div className="flex justify-between items-center pt-1 border-t border-[#E8E2DA]">
+              <span className="text-[10px] tracking-[0.25em] text-[#9B8E7E] uppercase">
                 Total da venda
               </span>
               <span className="text-lg text-[#2C2825] tracking-wide">
@@ -337,8 +281,8 @@ export function SaleRegistrationForm() {
             </div>
           )}
 
-          {/* ── 3. GARANTIA — TEXTO EXATO SOLICITADO ────────────────────── */}
-          <div className="pt-2">
+          {/* Garantia */}
+          <div>
             <label className="flex items-start gap-3 cursor-pointer group">
               <div className="relative mt-0.5 flex-shrink-0">
                 <input
@@ -353,43 +297,40 @@ export function SaleRegistrationForm() {
                   }
                 />
                 <div
-                  className={`w-4 h-4 border transition-colors ${
+                  className={`w-4 h-4 border transition-colors flex items-center justify-center ${
                     formData.garantia_aceita
                       ? "bg-[#C9A96E] border-[#C9A96E]"
                       : "bg-white border-[#D4CCBF] group-hover:border-[#C9A96E]"
                   }`}
                 >
                   {formData.garantia_aceita && (
-                    <svg className="w-3 h-3 text-white m-auto mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                    <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                     </svg>
                   )}
                 </div>
               </div>
-              {/* TEXTO EXATO CONFORME SOLICITADO */}
-              <span className="text-xs text-[#6B6259] leading-relaxed tracking-wide">
+              <span className="text-[11px] text-[#6B6259] leading-relaxed tracking-wide">
                 concordo que estou entregando as peças em plenas condições com garantia de 12 meses.
               </span>
             </label>
           </div>
 
-          {/* Error message */}
+          {/* Erro */}
           {errorMessage && (
-            <p className="text-xs text-[#C47A5A] tracking-wide">
-              {errorMessage}
-            </p>
+            <p className="text-[11px] text-[#C47A5A] tracking-wide">{errorMessage}</p>
           )}
 
-          {/* Success message */}
+          {/* Sucesso */}
           {submitStatus === "success" && (
-            <div className="bg-[#F0F5F1] border border-[#B5CDB9] rounded-sm p-3">
-              <p className="text-xs text-[#4A7A52] tracking-wide text-center">
+            <div className="bg-[#F0F5F1] border border-[#B5CDB9] rounded-sm p-3 text-center">
+              <p className="text-[11px] text-[#4A7A52] tracking-wide">
                 Venda registrada com sucesso.
               </p>
             </div>
           )}
 
-          {/* Submit Button */}
+          {/* Botão */}
           <button
             onClick={handleSubmit}
             disabled={
@@ -397,14 +338,13 @@ export function SaleRegistrationForm() {
               skuStatus !== "found" ||
               !formData.garantia_aceita
             }
-            className="w-full py-3.5 bg-[#2C2825] text-white text-xs tracking-[0.3em] uppercase transition-all hover:bg-[#C9A96E] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#2C2825]"
+            className="w-full py-3.5 bg-[#2C2825] text-white text-[10px] tracking-[0.35em] uppercase transition-all hover:bg-[#C9A96E] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#2C2825]"
           >
             {submitStatus === "loading" ? "Registrando..." : "Registrar Venda"}
           </button>
         </div>
 
-        {/* Footer note */}
-        <p className="text-center text-xs text-[#B5A99A] tracking-wide mt-6">
+        <p className="text-center text-[11px] text-[#B5A99A] tracking-wide mt-6">
           Todas as vendas ficam registradas no seu histórico.
         </p>
       </div>
