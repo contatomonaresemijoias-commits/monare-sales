@@ -2,25 +2,49 @@ import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
-interface SaleFormData {
+// Colunas reais confirmadas no banco:
+// produtos:          id, codigo_sku, nome, preco_base
+// estoque_parceiras: id, parceira_id (= parceiras.id), produto_id, quantidade
+// profiles:          id (= auth.uid), email, role, parceira_id (= parceiras.id)
+// vendas:            id, codigo_garantia, parceira_id, produto_id, cliente_nome,
+//                    cliente_whatsapp, data_venda, validade_garantia, termo_aceito,
+//                    valor_venda, ciclo_id, vendedora_id, comissao_percentual, comissao_valor
+
+function gerarCodigoGarantia(): string {
+  return "MN-" + Date.now().toString(36).toUpperCase();
+}
+
+function hojeISO(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
+function validadeISO(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + 1);
+  return d.toISOString().split("T")[0];
+}
+
+interface FormData {
   codigo_sku: string;
   produto_id: string;
   nome_produto: string;
   preco_unitario: number;
-  quantidade: number;
-  garantia_aceita: boolean;
+  cliente_nome: string;
+  cliente_whatsapp: string;
+  termo_aceito: boolean;
 }
 
 export function SaleRegistrationForm() {
   const { user } = useAuth();
 
-  const [formData, setFormData] = useState<SaleFormData>({
+  const [form, setForm] = useState<FormData>({
     codigo_sku: "",
     produto_id: "",
     nome_produto: "",
     preco_unitario: 0,
-    quantidade: 1,
-    garantia_aceita: false,
+    cliente_nome: "",
+    cliente_whatsapp: "",
+    termo_aceito: false,
   });
 
   const [skuStatus, setSkuStatus] = useState<
@@ -31,12 +55,13 @@ export function SaleRegistrationForm() {
     "idle" | "loading" | "success" | "error"
   >("idle");
 
-  const [errorMessage, setErrorMessage] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
 
-  // ── LOOKUP DE SKU ─────────────────────────────────────────────────────────
-  // Colunas reais confirmadas:
-  //   produtos: id, codigo_sku, nome, preco_base
-  //   estoque_parceiras: id, parceira_id, produto_id, quantidade
+  // ── LOOKUP SKU ────────────────────────────────────────────────────────────
+  // Fluxo:
+  // 1. Busca profiles onde id = auth.uid() → pega parceira_id real
+  // 2. Busca produto por codigo_sku
+  // 3. Verifica estoque_parceiras onde parceira_id = parceira_id real
 
   const lookupSKU = useCallback(
     async (sku: string) => {
@@ -44,21 +69,30 @@ export function SaleRegistrationForm() {
 
       if (skuLimpo.length < 2) {
         setSkuStatus("idle");
-        setFormData((prev) => ({
-          ...prev,
-          produto_id: "",
-          nome_produto: "",
-          preco_unitario: 0,
-        }));
+        setForm((prev) => ({ ...prev, produto_id: "", nome_produto: "", preco_unitario: 0 }));
         return;
       }
 
       if (!user?.id) return;
-
       setSkuStatus("loading");
 
       try {
-        // Passo A: produto existe? Usando codigo_sku (nome real da coluna)
+        // Passo 1: pega o parceira_id real do perfil logado
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("parceira_id")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (profileError) throw profileError;
+        if (!profile?.parceira_id) {
+          setSkuStatus("no_stock");
+          return;
+        }
+
+        const parceiraId = profile.parceira_id;
+
+        // Passo 2: busca produto por codigo_sku
         const { data: produto, error: produtoError } = await supabase
           .from("produtos")
           .select("id, nome, preco_base, codigo_sku")
@@ -66,51 +100,38 @@ export function SaleRegistrationForm() {
           .maybeSingle();
 
         if (produtoError) throw produtoError;
-
         if (!produto) {
           setSkuStatus("not_found");
-          setFormData((prev) => ({
-            ...prev,
-            produto_id: "",
-            nome_produto: "",
-            preco_unitario: 0,
-          }));
+          setForm((prev) => ({ ...prev, produto_id: "", nome_produto: "", preco_unitario: 0 }));
           return;
         }
 
-        // Passo B: parceira tem estoque? Usando quantidade (nome real da coluna)
+        // Passo 3: verifica estoque com parceira_id real
         const { data: estoque, error: estoqueError } = await supabase
           .from("estoque_parceiras")
           .select("quantidade")
-          .eq("parceira_id", user.id)
+          .eq("parceira_id", parceiraId)
           .eq("produto_id", produto.id)
           .maybeSingle();
 
         if (estoqueError) throw estoqueError;
 
-        const temEstoque = estoque && estoque.quantidade > 0;
-
-        if (!temEstoque) {
+        if (!estoque || estoque.quantidade <= 0) {
           setSkuStatus("no_stock");
-          setFormData((prev) => ({
-            ...prev,
-            produto_id: "",
-            nome_produto: "",
-            preco_unitario: 0,
-          }));
+          setForm((prev) => ({ ...prev, produto_id: "", nome_produto: "", preco_unitario: 0 }));
           return;
         }
 
         // Tudo ok ✓
         setSkuStatus("found");
-        setFormData((prev) => ({
+        setForm((prev) => ({
           ...prev,
           produto_id: produto.id,
           nome_produto: produto.nome,
           preco_unitario: produto.preco_base,
         }));
       } catch (err) {
-        console.error("[lookupSKU] Erro:", err);
+        console.error("[lookupSKU]", err);
         setSkuStatus("not_found");
       }
     },
@@ -121,51 +142,70 @@ export function SaleRegistrationForm() {
 
   const handleSubmit = async () => {
     if (!user?.id) return;
-    if (!formData.produto_id) {
-      setErrorMessage("Busque um SKU válido antes de registrar.");
+
+    if (!form.produto_id) {
+      setErrorMsg("Busque um SKU válido antes de registrar.");
       return;
     }
-    if (!formData.garantia_aceita) {
-      setErrorMessage("É necessário aceitar o termo de garantia.");
+    if (!form.cliente_nome.trim()) {
+      setErrorMsg("Informe o nome do cliente.");
+      return;
+    }
+    if (!form.cliente_whatsapp.trim()) {
+      setErrorMsg("Informe o WhatsApp do cliente.");
+      return;
+    }
+    if (!form.termo_aceito) {
+      setErrorMsg("É necessário aceitar o termo de garantia.");
       return;
     }
 
     setSubmitStatus("loading");
-    setErrorMessage("");
+    setErrorMsg("");
 
     try {
+      // Pega parceira_id real novamente para o insert
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("parceira_id")
+        .eq("id", user.id)
+        .maybeSingle();
+
       const { error } = await supabase
         .from("vendas")
         .insert({
-          parceira_id: user.id,
-          produto_id: formData.produto_id,
-          quantidade: formData.quantidade,
-          preco_unitario: formData.preco_unitario,
-          valor_total: formData.quantidade * formData.preco_unitario,
-          garantia_aceita: formData.garantia_aceita,
+          parceira_id: profile?.parceira_id ?? null,
+          vendedora_id: user.id,
+          produto_id: form.produto_id,
+          cliente_nome: form.cliente_nome.trim(),
+          cliente_whatsapp: form.cliente_whatsapp.trim(),
+          valor_venda: form.preco_unitario,
+          data_venda: hojeISO(),
+          validade_garantia: validadeISO(),
+          codigo_garantia: gerarCodigoGarantia(),
+          termo_aceito: form.termo_aceito,
         })
         .select("id");
 
       if (error) throw error;
 
       setSubmitStatus("success");
-      setFormData({
+      setForm({
         codigo_sku: "",
         produto_id: "",
         nome_produto: "",
         preco_unitario: 0,
-        quantidade: 1,
-        garantia_aceita: false,
+        cliente_nome: "",
+        cliente_whatsapp: "",
+        termo_aceito: false,
       });
       setSkuStatus("idle");
     } catch (err: any) {
-      console.error("[handleSubmit] Erro:", err);
+      console.error("[handleSubmit]", err);
       setSubmitStatus("error");
-      setErrorMessage(err?.message || "Erro ao registrar venda.");
+      setErrorMsg(err?.message || "Erro ao registrar venda.");
     }
   };
-
-  const valorTotal = formData.quantidade * formData.preco_unitario;
 
   // ── RENDER ────────────────────────────────────────────────────────────────
 
@@ -184,8 +224,7 @@ export function SaleRegistrationForm() {
           <div className="mt-4 mx-auto w-10 h-px bg-[#C9A96E]" />
         </div>
 
-        {/* Card */}
-        <div className="bg-white/90 backdrop-blur border border-[#E8E2DA] rounded-sm shadow-sm p-8 space-y-7">
+        <div className="bg-white/90 backdrop-blur border border-[#E8E2DA] rounded-sm shadow-sm p-8 space-y-6">
 
           {/* SKU */}
           <div className="space-y-1.5">
@@ -195,13 +234,13 @@ export function SaleRegistrationForm() {
             <div className="relative">
               <input
                 type="text"
-                value={formData.codigo_sku}
+                value={form.codigo_sku}
                 onChange={(e) => {
                   const val = e.target.value.toUpperCase();
-                  setFormData((prev) => ({ ...prev, codigo_sku: val }));
+                  setForm((prev) => ({ ...prev, codigo_sku: val }));
                   lookupSKU(val);
                 }}
-                placeholder="Ex: MN-AN-001"
+                placeholder="Ex: BM1000"
                 autoComplete="off"
                 className="w-full border-b border-[#D4CCBF] bg-transparent py-2.5 pr-6 text-[#2C2825] placeholder-[#C5BBAE] text-sm tracking-wide focus:outline-none focus:border-[#C9A96E] transition-colors"
               />
@@ -235,51 +274,46 @@ export function SaleRegistrationForm() {
               <p className="text-[10px] tracking-[0.25em] text-[#9B8E7E] uppercase">
                 Produto identificado
               </p>
-              <div className="space-y-0.5">
-                <p className="text-[10px] tracking-[0.2em] text-[#B5A99A] uppercase">Nome</p>
-                <p className="text-[#2C2825] text-sm tracking-wide font-medium">
-                  {formData.nome_produto}
-                </p>
+              <div>
+                <p className="text-[10px] tracking-[0.2em] text-[#B5A99A] uppercase mb-0.5">Nome</p>
+                <p className="text-[#2C2825] text-sm font-medium tracking-wide">{form.nome_produto}</p>
               </div>
-              <div className="space-y-0.5">
-                <p className="text-[10px] tracking-[0.2em] text-[#B5A99A] uppercase">Valor unitário</p>
+              <div>
+                <p className="text-[10px] tracking-[0.2em] text-[#B5A99A] uppercase mb-0.5">Valor</p>
                 <p className="text-[#C9A96E] text-sm tracking-wider">
-                  R$ {formData.preco_unitario.toFixed(2).replace(".", ",")}
+                  R$ {form.preco_unitario.toFixed(2).replace(".", ",")}
                 </p>
               </div>
             </div>
           )}
 
-          {/* Quantidade */}
+          {/* Nome do cliente */}
           <div className="space-y-1.5">
             <label className="block text-[10px] tracking-[0.25em] text-[#9B8E7E] uppercase">
-              Quantidade
+              Nome do cliente
             </label>
             <input
-              type="number"
-              min={1}
-              value={formData.quantidade}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  quantidade: Math.max(1, parseInt(e.target.value) || 1),
-                }))
-              }
-              className="w-full border-b border-[#D4CCBF] bg-transparent py-2.5 text-[#2C2825] text-sm tracking-wide focus:outline-none focus:border-[#C9A96E] transition-colors"
+              type="text"
+              value={form.cliente_nome}
+              onChange={(e) => setForm((prev) => ({ ...prev, cliente_nome: e.target.value }))}
+              placeholder="Nome completo"
+              className="w-full border-b border-[#D4CCBF] bg-transparent py-2.5 text-[#2C2825] placeholder-[#C5BBAE] text-sm tracking-wide focus:outline-none focus:border-[#C9A96E] transition-colors"
             />
           </div>
 
-          {/* Total */}
-          {skuStatus === "found" && (
-            <div className="flex justify-between items-center pt-1 border-t border-[#E8E2DA]">
-              <span className="text-[10px] tracking-[0.25em] text-[#9B8E7E] uppercase">
-                Total da venda
-              </span>
-              <span className="text-lg text-[#2C2825] tracking-wide">
-                R$ {valorTotal.toFixed(2).replace(".", ",")}
-              </span>
-            </div>
-          )}
+          {/* WhatsApp do cliente */}
+          <div className="space-y-1.5">
+            <label className="block text-[10px] tracking-[0.25em] text-[#9B8E7E] uppercase">
+              WhatsApp do cliente
+            </label>
+            <input
+              type="tel"
+              value={form.cliente_whatsapp}
+              onChange={(e) => setForm((prev) => ({ ...prev, cliente_whatsapp: e.target.value }))}
+              placeholder="(11) 99999-9999"
+              className="w-full border-b border-[#D4CCBF] bg-transparent py-2.5 text-[#2C2825] placeholder-[#C5BBAE] text-sm tracking-wide focus:outline-none focus:border-[#C9A96E] transition-colors"
+            />
+          </div>
 
           {/* Garantia */}
           <div>
@@ -288,22 +322,19 @@ export function SaleRegistrationForm() {
                 <input
                   type="checkbox"
                   className="sr-only"
-                  checked={formData.garantia_aceita}
+                  checked={form.termo_aceito}
                   onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      garantia_aceita: e.target.checked,
-                    }))
+                    setForm((prev) => ({ ...prev, termo_aceito: e.target.checked }))
                   }
                 />
                 <div
                   className={`w-4 h-4 border transition-colors flex items-center justify-center ${
-                    formData.garantia_aceita
+                    form.termo_aceito
                       ? "bg-[#C9A96E] border-[#C9A96E]"
                       : "bg-white border-[#D4CCBF] group-hover:border-[#C9A96E]"
                   }`}
                 >
-                  {formData.garantia_aceita && (
+                  {form.termo_aceito && (
                     <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                     </svg>
@@ -317,8 +348,8 @@ export function SaleRegistrationForm() {
           </div>
 
           {/* Erro */}
-          {errorMessage && (
-            <p className="text-[11px] text-[#C47A5A] tracking-wide">{errorMessage}</p>
+          {errorMsg && (
+            <p className="text-[11px] text-[#C47A5A] tracking-wide">{errorMsg}</p>
           )}
 
           {/* Sucesso */}
@@ -336,7 +367,7 @@ export function SaleRegistrationForm() {
             disabled={
               submitStatus === "loading" ||
               skuStatus !== "found" ||
-              !formData.garantia_aceita
+              !form.termo_aceito
             }
             className="w-full py-3.5 bg-[#2C2825] text-white text-[10px] tracking-[0.35em] uppercase transition-all hover:bg-[#C9A96E] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#2C2825]"
           >
