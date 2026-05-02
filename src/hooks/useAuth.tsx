@@ -2,12 +2,13 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
-type Profile = { id: string; role: string | null; parceira_id: string | null };
+type Profile = { id: string; user_id: string; display_name: string | null; parceira_id: string | null };
 
 type AuthCtx = {
   session: Session | null;
   user: User | null;
   profile: Profile | null;
+  roles: string[];
   isAdmin: boolean;
   loading: boolean;
   signOut: () => Promise<void>;
@@ -20,16 +21,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [roles, setRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   async function loadExtras(uid: string) {
-    const { data: prof } = await supabase
-      .from('profiles')
-      .select('id, role, parceira_id')
-      .eq('id', uid)
-      .maybeSingle();
-
+    const [{ data: prof }, { data: rs }] = await Promise.all([
+      supabase.from('profiles').select('id, user_id, display_name, parceira_id').eq('user_id', uid).maybeSingle(),
+      supabase.from('user_roles').select('role').eq('user_id', uid),
+    ]);
     setProfile(prof as Profile | null);
+    setRoles(((rs ?? []) as { role: string }[]).map((r) => r.role));
   }
 
   useEffect(() => {
@@ -47,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }, 0);
       } else {
         setProfile(null);
+        setRoles([]);
         setLoading(false);
       }
     });
@@ -78,7 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session,
         user,
         profile,
-        isAdmin: profile?.role === 'admin',
+        roles,
+        isAdmin: roles.includes('admin'),
         loading,
         signOut,
         refresh,

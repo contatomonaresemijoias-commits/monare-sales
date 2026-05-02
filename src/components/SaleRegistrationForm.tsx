@@ -28,7 +28,7 @@ interface SaleFormData {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function SaleRegistrationForm() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
 
   const [formData, setFormData] = useState<SaleFormData>({
     sku: "",
@@ -175,19 +175,21 @@ export function SaleRegistrationForm() {
     setErrorMessage("");
 
     try {
+      const codigo_garantia = `MNR-${Date.now().toString(36).toUpperCase()}`;
+      const hoje = new Date().toISOString().split('T')[0];
       const { error } = await supabase
         .from("vendas")
         .insert({
-          parceira_id: user.id,
+          parceira_id: profile?.parceira_id ?? null,
           produto_id: formData.produto_id,
-          quantidade: formData.quantidade,
-          preco_unitario: formData.preco_unitario,
-          valor_total: formData.quantidade * formData.preco_unitario,
-          garantia_aceita: formData.garantia_aceita,
-          created_at: new Date().toISOString(),
+          produto_nome: formData.nome_produto,
+          cliente_nome: 'Cliente',
+          cliente_whatsapp: '00000000000',
+          data_venda: hoje,
+          codigo_garantia,
+          termo_aceito: formData.garantia_aceita,
+          valor_venda: formData.quantidade * formData.preco_unitario,
         })
-        // FIX: select("id") força o retorno mínimo e evita o wildcard SELECT *
-        // que conflitava com a RLS quando a policy de SELECT era restritiva.
         .select("id");
 
       if (error) throw error;
