@@ -2,10 +2,11 @@ import { createContext, useContext, useEffect, useState, useRef, ReactNode } fro
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
+// Colunas reais da tabela profiles: id, email, role, parceira_id
 type Profile = {
   id: string;
-  user_id: string;
-  display_name: string | null;
+  email: string | null;
+  role: string | null;
   parceira_id: string | null;
 };
 
@@ -28,29 +29,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [roles, setRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // FIX: ref para evitar race condition entre onAuthStateChange e getSession.
-  // Somente UMA das duas pode chamar loadExtras — a que chegar primeiro.
-  // Depois que initialized = true, onAuthStateChange assume o controle exclusivo.
   const initialized = useRef(false);
 
   async function loadExtras(uid: string) {
-    const [{ data: prof }, { data: rs }] = await Promise.all([
-      supabase
-        .from('profiles')
-        .select('id, user_id, display_name, parceira_id')
-        .eq('user_id', uid)
-        .maybeSingle(),
-      supabase.from('user_roles').select('role').eq('user_id', uid),
-    ]);
+    // Busca profile pelo id (que é o auth.uid)
+    // Colunas reais: id, email, role, parceira_id
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('id, email, role, parceira_id')
+      .eq('id', uid)
+      .maybeSingle();
 
     setProfile(prof as Profile | null);
-    setRoles(((rs ?? []) as { role: string }[]).map((r) => r.role));
+
+    // Role vem da tabela profiles.role E da tabela user_roles
+    const profileRole = prof?.role ? [prof.role] : [];
+
+    const { data: rs } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', uid);
+
+    const userRoles = ((rs ?? []) as { role: string }[]).map((r) => r.role);
+
+    // Combina roles de ambas as fontes sem duplicatas
+    const allRoles = Array.from(new Set([...profileRole, ...userRoles]));
+    setRoles(allRoles);
   }
 
   useEffect(() => {
-    // Passo 1: getSession resolve a sessão inicial.
-    // É a única fonte de verdade no boot — onAuthStateChange não roda aqui.
     supabase.auth.getSession().then(async ({ data: { session: s } }) => {
       setSession(s);
       setUser(s?.user ?? null);
@@ -62,15 +69,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setRoles([]);
       }
 
-      initialized.current = true; // libera o listener para eventos futuros
+      initialized.current = true;
       setLoading(false);
     });
 
-    // Passo 2: onAuthStateChange lida APENAS com mudanças após o boot
-    // (login, logout, refresh de token). Ignora o evento inicial porque
-    // initialized.current ainda é false nesse momento.
     const { data: sub } = supabase.auth.onAuthStateChange(async (_e, s) => {
-      if (!initialized.current) return; // ignora disparo do boot
+      if (!initialized.current) return;
 
       setLoading(true);
       setSession(s);
@@ -92,14 +96,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function refresh() {
-    if (user) {
-      await loadExtras(user.id);
-    }
+    if (user) await loadExtras(user.id);
   }
 
   async function signOut() {
     await supabase.auth.signOut();
   }
+
+  const isAdmin = roles.includes('admin');
 
   return (
     <Ctx.Provider
@@ -108,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         profile,
         roles,
-        isAdmin: roles.includes('admin'),
+        isAdmin,
         loading,
         signOut,
         refresh,
