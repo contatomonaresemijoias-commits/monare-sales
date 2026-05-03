@@ -2,11 +2,10 @@ import { createContext, useContext, useEffect, useState, useRef, ReactNode } fro
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
-// Colunas reais da tabela profiles: id, email, role, parceira_id
 type Profile = {
   id: string;
-  email: string | null;
-  role: string | null;
+  user_id: string;
+  display_name: string | null;
   parceira_id: string | null;
 };
 
@@ -32,18 +31,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const initialized = useRef(false);
 
   async function loadExtras(uid: string) {
-    // Busca profile pelo id (= auth.uid)
-    // Sem user_roles — role vem direto de profiles.role
+    // Busca profile pelo user_id (= auth.uid)
     const { data: prof } = await supabase
       .from('profiles')
-      .select('id, email, role, parceira_id')
-      .eq('id', uid)
+      .select('id, user_id, display_name, parceira_id')
+      .eq('user_id', uid)
       .maybeSingle();
 
+    // Busca roles da tabela user_roles
+    const { data: rolesData } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', uid);
+
     const p = prof as Profile | null;
-    console.log('[useAuth] uid:', uid, 'profile:', prof, 'roles:', p?.role);
+    const r = (rolesData ?? []).map((row: any) => row.role as string);
+    console.log('[useAuth] uid:', uid, 'profile:', prof, 'roles:', r);
     setProfile(p);
-    setRoles(p?.role ? [p.role] : []);
+    setRoles(r);
   }
 
   useEffect(() => {
