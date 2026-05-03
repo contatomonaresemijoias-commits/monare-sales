@@ -141,8 +141,8 @@ export function SaleRegistrationForm() {
         .from("vendas")
         .insert({
           parceira_id: profile.parceira_id,
-          vendedora_id: user.id,
           produto_id: form.produto_id,
+          produto_nome: form.nome_produto,
           cliente_nome: form.cliente_nome.trim(),
           cliente_whatsapp: form.cliente_whatsapp.trim(),
           valor_venda: form.preco_unitario,
