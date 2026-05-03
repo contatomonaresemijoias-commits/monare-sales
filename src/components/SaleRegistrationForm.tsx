@@ -69,8 +69,8 @@ export function SaleRegistrationForm() {
         // Passo 1: busca produto por codigo_sku
         const { data: produto, error: produtoError } = await supabase
           .from("produtos")
-          .select("id, nome, preco_base, codigo_sku")
-          .eq("codigo_sku", skuLimpo)
+          .select("id, nome, preco_venda, sku")
+          .eq("sku", skuLimpo)
           .maybeSingle();
 
         if (produtoError) throw produtoError;
@@ -103,7 +103,7 @@ export function SaleRegistrationForm() {
           ...prev,
           produto_id: produto.id,
           nome_produto: produto.nome,
-          preco_unitario: produto.preco_base,
+          preco_unitario: Number(produto.preco_venda),
         }));
       } catch (err) {
         console.error("[lookupSKU]", err);
