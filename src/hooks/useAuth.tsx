@@ -41,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .maybeSingle();
 
     const p = prof as Profile | null;
+    console.log('[useAuth] uid:', uid, 'profile:', prof, 'roles:', p?.role);
     setProfile(p);
     setRoles(p?.role ? [p.role] : []);
   }
