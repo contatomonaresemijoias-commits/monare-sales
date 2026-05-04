@@ -149,7 +149,7 @@ export function SaleRegistrationForm() {
           validade_garantia: validadeISO(),
           codigo_garantia: gerarCodigoGarantia(),
           termo_aceito: form.termo_aceito,
-        })
+        } as any)
         .select("id");
 
       if (error) throw error;
