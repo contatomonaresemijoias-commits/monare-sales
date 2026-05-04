@@ -27,8 +27,6 @@ interface FormData {
 }
 
 export function SaleRegistrationForm() {
-  // FIX: usa profile direto do contexto — já tem o parceira_id correto
-  // Sem busca extra ao Supabase que estava filtrando pela coluna errada
   const { user, profile } = useAuth();
 
   const [form, setForm] = useState<FormData>({
@@ -66,11 +64,10 @@ export function SaleRegistrationForm() {
       setSkuStatus("loading");
 
       try {
-        // Passo 1: busca produto por codigo_sku
         const { data: produto, error: produtoError } = await supabase
           .from("produtos")
-          .select("id, nome, preco_venda, sku")
-          .eq("sku", skuLimpo)
+          .select("id, nome, preco_base, codigo_sku")
+          .eq("codigo_sku", skuLimpo)
           .maybeSingle();
 
         if (produtoError) throw produtoError;
@@ -81,7 +78,6 @@ export function SaleRegistrationForm() {
           return;
         }
 
-        // Passo 2: verifica estoque usando parceira_id do contexto (já correto)
         const { data: estoque, error: estoqueError } = await supabase
           .from("estoque_parceiras")
           .select("quantidade")
@@ -97,13 +93,12 @@ export function SaleRegistrationForm() {
           return;
         }
 
-        // Tudo ok ✓
         setSkuStatus("found");
         setForm((prev) => ({
           ...prev,
           produto_id: produto.id,
           nome_produto: produto.nome,
-          preco_unitario: Number(produto.preco_venda),
+          preco_unitario: Number(produto.preco_base),
         }));
       } catch (err) {
         console.error("[lookupSKU]", err);
@@ -168,7 +163,7 @@ export function SaleRegistrationForm() {
     } catch (err: any) {
       console.error("[handleSubmit]", err);
       setSubmitStatus("error");
-      setErrorMsg(JSON.stringify(err));
+      setErrorMsg(err?.message || "Erro ao registrar venda.");
     }
   };
 
@@ -188,7 +183,6 @@ export function SaleRegistrationForm() {
 
         <div className="bg-white/90 backdrop-blur border border-[#E8E2DA] rounded-sm shadow-sm p-8 space-y-6">
 
-          {/* SKU */}
           <div className="space-y-1.5">
             <label className="block text-[10px] tracking-[0.25em] text-[#9B8E7E] uppercase">
               Código SKU
@@ -230,7 +224,6 @@ export function SaleRegistrationForm() {
             )}
           </div>
 
-          {/* Produto identificado — somente leitura */}
           {skuStatus === "found" && (
             <div className="bg-[#FAF9F7] border border-[#E8E2DA] rounded-sm p-4 space-y-3">
               <p className="text-[10px] tracking-[0.25em] text-[#9B8E7E] uppercase">
@@ -249,7 +242,6 @@ export function SaleRegistrationForm() {
             </div>
           )}
 
-          {/* Nome do cliente */}
           <div className="space-y-1.5">
             <label className="block text-[10px] tracking-[0.25em] text-[#9B8E7E] uppercase">
               Nome do cliente
@@ -263,7 +255,6 @@ export function SaleRegistrationForm() {
             />
           </div>
 
-          {/* WhatsApp do cliente */}
           <div className="space-y-1.5">
             <label className="block text-[10px] tracking-[0.25em] text-[#9B8E7E] uppercase">
               WhatsApp do cliente
@@ -277,7 +268,6 @@ export function SaleRegistrationForm() {
             />
           </div>
 
-          {/* Garantia */}
           <div>
             <label className="flex items-start gap-3 cursor-pointer group">
               <div className="relative mt-0.5 flex-shrink-0">
@@ -289,13 +279,9 @@ export function SaleRegistrationForm() {
                     setForm((prev) => ({ ...prev, termo_aceito: e.target.checked }))
                   }
                 />
-                <div
-                  className={`w-4 h-4 border transition-colors flex items-center justify-center ${
-                    form.termo_aceito
-                      ? "bg-[#C9A96E] border-[#C9A96E]"
-                      : "bg-white border-[#D4CCBF] group-hover:border-[#C9A96E]"
-                  }`}
-                >
+                <div className={`w-4 h-4 border transition-colors flex items-center justify-center ${
+                  form.termo_aceito ? "bg-[#C9A96E] border-[#C9A96E]" : "bg-white border-[#D4CCBF] group-hover:border-[#C9A96E]"
+                }`}>
                   {form.termo_aceito && (
                     <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
@@ -309,12 +295,10 @@ export function SaleRegistrationForm() {
             </label>
           </div>
 
-          {/* Erro */}
           {errorMsg && (
             <p className="text-[11px] text-[#C47A5A] tracking-wide">{errorMsg}</p>
           )}
 
-          {/* Sucesso */}
           {submitStatus === "success" && (
             <div className="bg-[#F0F5F1] border border-[#B5CDB9] rounded-sm p-3 text-center">
               <p className="text-[11px] text-[#4A7A52] tracking-wide">
@@ -323,14 +307,9 @@ export function SaleRegistrationForm() {
             </div>
           )}
 
-          {/* Botão */}
           <button
             onClick={handleSubmit}
-            disabled={
-              submitStatus === "loading" ||
-              skuStatus !== "found" ||
-              !form.termo_aceito
-            }
+            disabled={submitStatus === "loading" || skuStatus !== "found" || !form.termo_aceito}
             className="w-full py-3.5 bg-[#2C2825] text-white text-[10px] tracking-[0.35em] uppercase transition-all hover:bg-[#C9A96E] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#2C2825]"
           >
             {submitStatus === "loading" ? "Registrando..." : "Registrar Venda"}
