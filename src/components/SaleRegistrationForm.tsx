@@ -59,7 +59,8 @@ export function SaleRegistrationForm() {
         return;
       }
 
-      if (!user?.id || !profile?.parceira_id) return;
+      // Só exige user logado — parceira_id é opcional no lookup
+      if (!user?.id) return;
 
       setSkuStatus("loading");
 
@@ -78,19 +79,22 @@ export function SaleRegistrationForm() {
           return;
         }
 
-        const { data: estoque, error: estoqueError } = await supabase
-          .from("estoque_parceiras")
-          .select("quantidade")
-          .eq("parceira_id", profile.parceira_id)
-          .eq("produto_id", produto.id)
-          .maybeSingle();
+        // Verifica estoque — se não tem parceira_id ainda, pula verificação
+        if (profile?.parceira_id) {
+          const { data: estoque, error: estoqueError } = await supabase
+            .from("estoque_parceiras")
+            .select("quantidade")
+            .eq("parceira_id", profile.parceira_id)
+            .eq("produto_id", produto.id)
+            .maybeSingle();
 
-        if (estoqueError) throw estoqueError;
+          if (estoqueError) throw estoqueError;
 
-        if (!estoque || estoque.quantidade <= 0) {
-          setSkuStatus("no_stock");
-          setForm((prev) => ({ ...prev, produto_id: "", nome_produto: "", preco_unitario: 0 }));
-          return;
+          if (!estoque || estoque.quantidade <= 0) {
+            setSkuStatus("no_stock");
+            setForm((prev) => ({ ...prev, produto_id: "", nome_produto: "", preco_unitario: 0 }));
+            return;
+          }
         }
 
         setSkuStatus("found");
