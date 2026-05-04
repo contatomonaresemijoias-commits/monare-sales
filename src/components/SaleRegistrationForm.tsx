@@ -168,7 +168,7 @@ export function SaleRegistrationForm() {
     } catch (err: any) {
       console.error("[handleSubmit]", err);
       setSubmitStatus("error");
-      setErrorMsg(err?.message || "Erro ao registrar venda.");
+      setErrorMsg(JSON.stringify(err));
     }
   };
 
