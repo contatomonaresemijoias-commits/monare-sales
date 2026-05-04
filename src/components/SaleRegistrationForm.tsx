@@ -142,7 +142,6 @@ export function SaleRegistrationForm() {
         .insert({
           parceira_id: profile.parceira_id,
           produto_id: form.produto_id,
-          produto_nome: form.nome_produto,
           cliente_nome: form.cliente_nome.trim(),
           cliente_whatsapp: form.cliente_whatsapp.trim(),
           valor_venda: form.preco_unitario,
@@ -150,7 +149,7 @@ export function SaleRegistrationForm() {
           validade_garantia: validadeISO(),
           codigo_garantia: gerarCodigoGarantia(),
           termo_aceito: form.termo_aceito,
-        })
+        } as any)
         .select("id");
 
       if (error) throw error;
