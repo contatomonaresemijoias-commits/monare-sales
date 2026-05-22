@@ -310,6 +310,7 @@ export function SaleRegistrationForm({ externalSku, onSkuConsumed }: Props) {
       // Gera um código de garantia único por item e insere uma venda por produto
       const vendaInserts = items.map((item, i) => ({
         user_id: user.id,
+        ...(profile?.parceira_id ? { parceira_id: profile.parceira_id } : {}),
         produto_id: item.produto_id,
         produto_nome: item.nome_produto,
         cliente_nome: form.cliente_nome.trim(),

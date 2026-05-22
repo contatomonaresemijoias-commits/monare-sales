@@ -29,24 +29,32 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user || !profile?.parceira_id) {
+    if (!user) {
       setLoading(false);
       return;
     }
     async function load() {
       setLoading(true);
-      const [{ data: saldoData, error: saldoErr }, { data: vendasData, error: vendasErr }] = await Promise.all([
-        supabase.rpc('saldo_ciclo_aberto', { _parceira_id: profile!.parceira_id! }),
-        supabase
-          .from('vendas')
-          .select('id, produto_nome, cliente_nome, data_venda, valor_venda')
-          .eq('parceira_id', profile!.parceira_id!)
-          .order('data_venda', { ascending: false })
-          .limit(50),
+      const parceiraId = profile?.parceira_id;
+
+      const vendasQuery = supabase
+        .from('vendas')
+        .select('id, produto_nome, cliente_nome, data_venda, valor_venda')
+        .order('data_venda', { ascending: false })
+        .limit(50);
+
+      const [saldoResult, { data: vendasData, error: vendasErr }] = await Promise.all([
+        parceiraId
+          ? supabase.rpc('saldo_ciclo_aberto', { _parceira_id: parceiraId })
+          : Promise.resolve({ data: null, error: null }),
+        parceiraId
+          ? vendasQuery.eq('parceira_id', parceiraId)
+          : vendasQuery.eq('user_id', user!.id),
       ]);
-      if (saldoErr) console.error('[Dashboard] saldo:', saldoErr);
+
+      if (saldoResult.error) console.error('[Dashboard] saldo:', saldoResult.error);
       if (vendasErr) console.error('[Dashboard] vendas:', vendasErr);
-      setSaldo((saldoData as any)?.[0] ?? null);
+      setSaldo((saldoResult.data as any)?.[0] ?? null);
       setVendas((vendasData ?? []) as Venda[]);
       setLoading(false);
     }
