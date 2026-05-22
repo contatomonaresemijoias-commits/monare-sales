@@ -7,6 +7,7 @@ type Profile = {
   user_id: string;
   display_name: string | null;
   telefone: string | null;
+  parceira_id: string | null;
 };
 
 type AuthCtx = {
