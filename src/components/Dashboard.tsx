@@ -23,30 +23,35 @@ const fmt = (n: number | null | undefined) =>
   (n ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [saldo, setSaldo] = useState<Saldo | null>(null);
   const [vendas, setVendas] = useState<Venda[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !profile?.parceira_id) {
+      setLoading(false);
+      return;
+    }
     async function load() {
       setLoading(true);
-      const [{ data: saldoData }, { data: vendasData }] = await Promise.all([
-        supabase.rpc('saldo_ciclo_aberto', { _user_id: user!.id }),
+      const [{ data: saldoData, error: saldoErr }, { data: vendasData, error: vendasErr }] = await Promise.all([
+        supabase.rpc('saldo_ciclo_aberto', { _parceira_id: profile!.parceira_id! }),
         supabase
           .from('vendas')
           .select('id, produto_nome, cliente_nome, data_venda, valor_venda')
-          .eq('user_id', user!.id)
+          .eq('parceira_id', profile!.parceira_id!)
           .order('data_venda', { ascending: false })
           .limit(50),
       ]);
-      setSaldo(saldoData?.[0] ?? null);
+      if (saldoErr) console.error('[Dashboard] saldo:', saldoErr);
+      if (vendasErr) console.error('[Dashboard] vendas:', vendasErr);
+      setSaldo((saldoData as any)?.[0] ?? null);
       setVendas((vendasData ?? []) as Venda[]);
       setLoading(false);
     }
     load();
-  }, [user]);
+  }, [user, profile?.parceira_id]);
 
   if (loading) {
     return (
