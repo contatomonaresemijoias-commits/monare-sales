@@ -54,8 +54,24 @@ export default function Dashboard() {
 
       if (saldoResult.error) console.error('[Dashboard] saldo:', saldoResult.error);
       if (vendasErr) console.error('[Dashboard] vendas:', vendasErr);
-      setSaldo((saldoResult.data as any)?.[0] ?? null);
-      setVendas((vendasData ?? []) as Venda[]);
+      const vendasLista = (vendasData ?? []) as Venda[];
+      const saldoRpc = (saldoResult.data as any)?.[0] ?? null;
+
+      // Se não tem parceira_id, calcula totais direto das vendas
+      if (!parceiraId && !saldoRpc) {
+        const totalVendas = vendasLista.reduce((acc, v) => acc + (v.valor_venda ?? 0), 0);
+        setSaldo({
+          ciclo_id: '',
+          aberto_em: '',
+          total_vendas: totalVendas,
+          qtd_vendas: vendasLista.length,
+          total_comissao: 0,
+        });
+      } else {
+        setSaldo(saldoRpc);
+      }
+
+      setVendas(vendasLista);
       setLoading(false);
     }
     load();
