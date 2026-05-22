@@ -18,8 +18,7 @@ export default function AuthPage() {
     if (!loading && user) nav(isAdmin ? '/admin' : '/', { replace: true });
   }, [user, loading, isAdmin, nav]);
 
-  if (loading) return null;
-  if (user) return <Navigate to={isAdmin ? '/admin' : '/'} replace />;
+  if (!loading && user) return <Navigate to={isAdmin ? '/admin' : '/'} replace />;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
