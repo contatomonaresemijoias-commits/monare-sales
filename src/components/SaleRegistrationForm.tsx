@@ -11,6 +11,16 @@ function gerarCodigoGarantia(index: number = 0): string {
   return "MN-" + (Date.now() + index).toString(36).toUpperCase();
 }
 
+function gerarUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 function hojeISO(): string {
   return new Date().toISOString().split("T")[0];
 }
@@ -65,22 +75,23 @@ export function SaleRegistrationForm({ externalSku, onSkuConsumed }: Props) {
   const [produtoOptions, setProdutoOptions] = useState<ProdutoOption[]>([]);
 
   useEffect(() => {
+    if (!user?.id) return;
     supabase
-      .from("produtos")
-      .select("id, sku, nome, preco_venda")
-      .eq("ativo", true)
-      .order("sku")
+      .from("estoque")
+      .select("quantidade, produto:produto_id(id, sku, nome, preco_venda, ativo)")
+      .eq("user_id", user.id)
+      .gt("quantidade", 0)
       .then(({ data }) => {
-        setProdutoOptions(
-          (data ?? []).map((p) => ({
-            id: p.id,
-            sku: p.sku,
-            nome: p.nome,
-            preco_venda: p.preco_venda,
-          })),
-        );
+        const options: ProdutoOption[] = (data ?? [])
+          .filter((e) => (e.produto as any)?.ativo)
+          .map((e) => {
+            const p = e.produto as any;
+            return { id: p.id, sku: p.sku, nome: p.nome, preco_venda: p.preco_venda };
+          })
+          .sort((a, b) => a.sku.localeCompare(b.sku));
+        setProdutoOptions(options);
       });
-  }, []);
+  }, [user?.id]);
 
   // Quando a sidebar seleciona um produto, dispara o lookup do SKU
   useEffect(() => {
@@ -115,6 +126,7 @@ export function SaleRegistrationForm({ externalSku, onSkuConsumed }: Props) {
     cliente_nome: string;
     cliente_whatsapp: string;
     revendedora_nome: string;
+    garantia_uuid: string;
   } | null>(null);
 
   // Lookup de cliente pelo WhatsApp
@@ -307,6 +319,9 @@ export function SaleRegistrationForm({ externalSku, onSkuConsumed }: Props) {
     const digits = form.cliente_whatsapp.replace(/\D/g, "");
 
     try {
+      // UUID público único por transação — compartilhado entre todos os itens
+      const garantiaUUID = gerarUUID();
+
       // Gera um código de garantia único por item e insere uma venda por produto
       const vendaInserts = items.map((item, i) => ({
         user_id: user.id,
@@ -319,6 +334,7 @@ export function SaleRegistrationForm({ externalSku, onSkuConsumed }: Props) {
         validade_garantia: validadeGarantia,
         codigo_garantia: gerarCodigoGarantia(i),
         termo_aceito: form.termo_aceito,
+        garantia_uuid: garantiaUUID,
       }));
 
       const { data: inserted, error } = await supabase
@@ -380,6 +396,7 @@ export function SaleRegistrationForm({ externalSku, onSkuConsumed }: Props) {
         cliente_nome: form.cliente_nome.trim(),
         cliente_whatsapp: digits,
         revendedora_nome: profile?.display_name ?? "",
+        garantia_uuid: garantiaUUID,
       });
 
       setSubmitStatus("success");
@@ -484,6 +501,7 @@ export function SaleRegistrationForm({ externalSku, onSkuConsumed }: Props) {
             cliente_nome={successData.cliente_nome}
             cliente_whatsapp={successData.cliente_whatsapp}
             revendedora_nome={successData.revendedora_nome}
+            garantia_uuid={successData.garantia_uuid}
             onClose={() => setSuccessData(null)}
           />
         )}
@@ -746,6 +764,7 @@ export function SaleRegistrationForm({ externalSku, onSkuConsumed }: Props) {
           cliente_nome={successData.cliente_nome}
           cliente_whatsapp={successData.cliente_whatsapp}
           revendedora_nome={successData.revendedora_nome}
+          garantia_uuid={successData.garantia_uuid}
           onClose={() => setSuccessData(null)}
         />
       )}

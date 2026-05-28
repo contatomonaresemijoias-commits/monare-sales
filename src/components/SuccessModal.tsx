@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, MessageCircle, CheckCircle2, Share2, Download, Loader2 } from 'lucide-react';
+import { X, MessageCircle, CheckCircle2, Share2, Download, Loader2, Copy, Check } from 'lucide-react';
 
 interface VendaItem {
   produto_nome: string;
@@ -14,6 +14,7 @@ interface SuccessModalProps {
   cliente_nome: string;
   cliente_whatsapp: string;
   revendedora_nome: string;
+  garantia_uuid: string;
   onClose: () => void;
 }
 
@@ -41,8 +42,29 @@ async function compartilharPDF(item: VendaItem): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-export default function SuccessModal({ items, cliente_nome, cliente_whatsapp, revendedora_nome, onClose }: SuccessModalProps) {
+export default function SuccessModal({ items, cliente_nome, cliente_whatsapp, revendedora_nome, garantia_uuid, onClose }: SuccessModalProps) {
   const [sharing, setSharing] = useState<Record<number, boolean>>({});
+  const [copied, setCopied] = useState(false);
+
+  const garantiaLink = `${window.location.origin}/garantia?venda=${garantia_uuid}`;
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(garantiaLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback para navegadores sem suporte
+      const el = document.createElement('textarea');
+      el.value = garantiaLink;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   const formatarData = (dataIso: string) => {
     if (!dataIso) return '';
@@ -81,7 +103,8 @@ export default function SuccessModal({ items, cliente_nome, cliente_whatsapp, re
       `Olá, ${cliente_nome}! 🌟\n\n` +
       `Sua${items.length > 1 ? 's peças foram' : ' peça foi'} registrada${items.length > 1 ? 's' : ''} com sucesso às ${horaAtual}.\n\n` +
       linhas +
-      `\n\n🛡️ *Garantia:* 12 meses por peça\n` +
+      `\n\n🔗 *Seus certificados:*\n${garantiaLink}\n\n` +
+      `🛡️ *Garantia:* 12 meses por peça\n` +
       `📍 *Revendedora:* ${revendedora_nome}\n\n` +
       `_Monarê Semijoias — Sorocaba_`;
 
@@ -107,30 +130,22 @@ export default function SuccessModal({ items, cliente_nome, cliente_whatsapp, re
           </p>
         </div>
 
-        {/* Um card por item */}
-        <div className="mt-6 space-y-3">
-          {items.map((item, i) => (
-            <div key={i} className="p-4 bg-bege-light rounded-2xl border border-bege text-left space-y-3">
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-ink-soft mb-0.5">{item.produto_nome}</p>
-                <p className="font-mono text-base text-ink font-semibold tracking-widest">{item.codigo_garantia}</p>
-                <p className="text-[10px] text-ink-soft mt-0.5">Válido até {formatarData(item.validade_garantia)}</p>
-              </div>
 
-              {item.pdf_garantia_url && (
-                <button
-                  onClick={() => handleCompartilhar(item, i)}
-                  disabled={sharing[i]}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#2C2825] text-white text-[11px] font-semibold tracking-wide hover:bg-[#C9A96E] disabled:opacity-50 transition-all"
-                >
-                  {sharing[i]
-                    ? <><Loader2 size={13} className="animate-spin" /> Preparando…</>
-                    : <><ShareIcon size={13} /> {shareBtnLabel}</>
-                  }
-                </button>
-              )}
-            </div>
-          ))}
+        {/* Link de garantia da venda — copiar e enviar ao cliente */}
+        <div className="mt-5 p-4 bg-[#FAF9F7] border border-[#E8E2DA] rounded-2xl space-y-2">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-[#9B8E7E] font-semibold">
+            Link de garantia
+          </p>
+          <p className="text-[11px] text-[#6B6259] break-all leading-relaxed font-mono">
+            {garantiaLink}
+          </p>
+          <button
+            onClick={handleCopyLink}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-[#C9A96E] text-[#C9A96E] text-[11px] font-semibold tracking-wide hover:bg-[#C9A96E] hover:text-white transition-all active:scale-[0.98]"
+          >
+            {copied ? <Check size={13} /> : <Copy size={13} />}
+            {copied ? 'Link copiado!' : 'Copiar link'}
+          </button>
         </div>
 
         {/* Abrir WhatsApp com texto (sem link de PDF) */}
