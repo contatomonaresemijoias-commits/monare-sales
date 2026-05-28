@@ -11,8 +11,7 @@ import {
   FileSpreadsheet,
   MessageCircle,
   CheckCircle2,
-  LayoutGrid,
-  List,
+  Truck,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
@@ -45,32 +44,11 @@ type VendaSucesso = {
   validade_garantia: string;
 };
 
-type EstoqueGeralRow = {
-  id: string;
-  produto_id: string;
-  quantidade: number;
-  produto: { id: string; sku: string; nome: string; preco_venda: number };
-};
-type EstoqueUsuariosRow = {
-  produto_id: string;
-  user_id: string;
-  quantidade: number;
-  produto: { id: string; sku: string; nome: string; preco_venda: number };
-};
-
 export default function Mostruario() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [estoque, setEstoque] = useState<EstoqueItem[]>([]);
-  const [view, setView] = useState<'revendedora' | 'geral'>('revendedora');
-  const [estoqueGeral, setEstoqueGeral] = useState<EstoqueGeralRow[]>([]);
-  const [estoqueUsuarios, setEstoqueUsuarios] = useState<EstoqueUsuariosRow[]>([]);
-  const [loadingGeral, setLoadingGeral] = useState(false);
-  // Entrada no estoque geral
-  const [geralSku, setGeralSku] = useState('');
-  const [geralQty, setGeralQty] = useState(1);
-  const [addingGeral, setAddingGeral] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -80,6 +58,10 @@ export default function Mostruario() {
   const [addQty, setAddQty] = useState(1);
   const [adding, setAdding] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Entregar Maleta
+  const [confirmarEntrega, setConfirmarEntrega] = useState(false);
+  const [entregando, setEntregando] = useState(false);
 
   // Venda
   const [vendaItem, setVendaItem] = useState<EstoqueItem | null>(null);
@@ -91,81 +73,6 @@ export default function Mostruario() {
   });
   const [vendendo, setVendendo] = useState(false);
   const [vendaSucesso, setVendaSucesso] = useState<VendaSucesso | null>(null);
-
-  async function loadEstoqueGeral() {
-    setLoadingGeral(true);
-    const [{ data: geral }, { data: usuariosEst }, { data: perfis }] = await Promise.all([
-      supabase
-        .from('estoque_geral')
-        .select('id, produto_id, quantidade, produto:produtos(id, sku, nome, preco_venda)')
-        .order('quantidade', { ascending: false }),
-      supabase
-        .from('estoque')
-        .select('produto_id, user_id, quantidade, produto:produtos(id, sku, nome, preco_venda)')
-        .gt('quantidade', 0),
-      supabase.from('profiles').select('user_id, display_name'),
-    ]);
-    setEstoqueGeral((geral ?? []) as any);
-    setEstoqueUsuarios((usuariosEst ?? []) as any);
-    // Store profiles for name lookup
-    const nomeMap = new Map((perfis ?? []).map((p) => [p.user_id, p.display_name]));
-    setNomeUsuarioMap(nomeMap);
-    setLoadingGeral(false);
-  }
-
-  const [nomeUsuarioMap, setNomeUsuarioMap] = useState<Map<string, string | null>>(new Map());
-
-  // Produtos que têm quantidade no estoque geral
-  const produtosComEstoqueGeral = useMemo(() =>
-    estoqueGeral.filter((r) => r.quantidade > 0)
-      .sort((a, b) => a.produto.sku.localeCompare(b.produto.sku)),
-    [estoqueGeral]);
-
-  // Produtos sem nenhuma unidade no estoque geral
-  const produtosSemEstoqueGeral = useMemo(() => {
-    const comIds = new Set(estoqueGeral.filter(r => r.quantidade > 0).map((r) => r.produto_id));
-    return produtos.filter((p) => !comIds.has(p.id));
-  }, [estoqueGeral, produtos]);
-
-  // Distribuição por usuários (para referência na view geral)
-  const distribuicaoPorProduto = useMemo(() => {
-    const map = new Map<string, { nome: string; quantidade: number }[]>();
-    for (const row of estoqueUsuarios) {
-      if (!map.has(row.produto_id)) map.set(row.produto_id, []);
-      map.get(row.produto_id)!.push({
-        nome: nomeUsuarioMap.get(row.user_id) ?? 'Sem nome',
-        quantidade: row.quantidade,
-      });
-    }
-    return map;
-  }, [estoqueUsuarios, nomeUsuarioMap]);
-
-  async function adicionarAoEstoqueGeral(e: React.FormEvent) {
-    e.preventDefault();
-    const produtoPreviewGeral = produtos.find((p) => p.sku.toUpperCase() === geralSku.trim().toUpperCase());
-    if (!produtoPreviewGeral || geralQty < 1) {
-      toast({ title: 'SKU não encontrado ou quantidade inválida', variant: 'destructive' });
-      return;
-    }
-    setAddingGeral(true);
-    const existing = estoqueGeral.find((r) => r.produto_id === produtoPreviewGeral.id);
-    if (existing) {
-      const { error } = await supabase
-        .from('estoque_geral')
-        .update({ quantidade: existing.quantidade + geralQty })
-        .eq('id', existing.id);
-      if (error) toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    } else {
-      const { error } = await supabase
-        .from('estoque_geral')
-        .insert({ produto_id: produtoPreviewGeral.id, quantidade: geralQty });
-      if (error) toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    }
-    setGeralSku('');
-    setGeralQty(1);
-    setAddingGeral(false);
-    loadEstoqueGeral();
-  }
 
   const produtoPreview = useMemo(() => {
     if (!addSku) return null;
@@ -242,7 +149,6 @@ export default function Mostruario() {
     const codigo = generateWarrantyCode();
     const validade = getWarrantyExpiryISO(vendaForm.data_venda);
 
-    // Os triggers do banco cuidam de: baixa de estoque, ciclo, % comissão e valor da comissão.
     const { error } = await supabase.from('vendas').insert({
       user_id: selectedUserId,
       produto_id: vendaItem.produto_id,
@@ -332,46 +238,12 @@ export default function Mostruario() {
   }
 
   async function removeItem(item: EstoqueItem) {
-    const qtdRestante = item.quantidade;
-    if (!confirm(`Remover ${item.produto.sku} do mostruário?${qtdRestante > 0 ? `\n\n${qtdRestante} unidade(s) serão devolvidas ao estoque geral.` : ''}`)) return;
-
-    // Devolve ao estoque geral antes de deletar
-    if (qtdRestante > 0) {
-      const { data: geralItem, error: errBusca } = await supabase
-        .from('estoque_geral')
-        .select('id, quantidade')
-        .eq('produto_id', item.produto_id)
-        .maybeSingle();
-
-      if (errBusca) {
-        toast({ title: 'Erro ao buscar estoque geral', description: errBusca.message, variant: 'destructive' });
-        return;
-      }
-
-      if (geralItem) {
-        const { error: errDevolve } = await supabase
-          .from('estoque_geral')
-          .update({ quantidade: geralItem.quantidade + qtdRestante })
-          .eq('id', geralItem.id);
-        if (errDevolve) {
-          toast({ title: 'Erro ao devolver ao estoque geral', description: errDevolve.message, variant: 'destructive' });
-          return;
-        }
-      }
-    }
-
+    if (!confirm(`Remover ${item.produto.sku} do mostruário?`)) return;
     const { error } = await supabase.from('estoque').delete().eq('id', item.id);
     if (error) {
       toast({ title: 'Erro', description: error.message, variant: 'destructive' });
     } else {
       setEstoque((es) => es.filter((e) => e.id !== item.id));
-      if (qtdRestante > 0) {
-        setEstoqueGeral((prev) =>
-          prev.map((r) =>
-            r.produto_id === item.produto_id ? { ...r, quantidade: r.quantidade + qtdRestante } : r,
-          ),
-        );
-      }
     }
   }
 
@@ -384,39 +256,8 @@ export default function Mostruario() {
       return;
     }
 
-    // Verifica estoque geral
-    const { data: estoqueGeralItem } = await supabase
-      .from('estoque_geral')
-      .select('id, quantidade')
-      .eq('produto_id', produtoPreview.id)
-      .maybeSingle();
-
-    const disponivelGeral = estoqueGeralItem?.quantidade ?? 0;
-
-    if (disponivelGeral < addQty) {
-      toast({
-        title: 'Estoque insuficiente',
-        description: `Disponível no estoque geral: ${disponivelGeral} unidade(s). Adicione mais ao estoque geral primeiro.`,
-        variant: 'destructive',
-      });
-      return;
-    }
-
     setAdding(true);
 
-    // Deduz do estoque geral
-    const { error: errGeral } = await supabase
-      .from('estoque_geral')
-      .update({ quantidade: disponivelGeral - addQty })
-      .eq('id', estoqueGeralItem!.id);
-
-    if (errGeral) {
-      toast({ title: 'Erro ao deduzir do estoque geral', description: errGeral.message, variant: 'destructive' });
-      setAdding(false);
-      return;
-    }
-
-    // Adiciona ao mostruário do usuário
     const existing = estoque.find((e) => e.produto_id === produtoPreview.id);
     if (existing) {
       await updateQty(existing, existing.quantidade + addQty);
@@ -436,6 +277,58 @@ export default function Mostruario() {
     setAddSku('');
     setAddQty(1);
     setAdding(false);
+  }
+
+  async function entregarMaleta() {
+    if (!selectedUserId) return;
+    setEntregando(true);
+
+    const hoje = new Date().toISOString();
+
+    const { data: ciclo, error: errBusca } = await supabase
+      .from('ciclos_mostruario')
+      .select('id')
+      .eq('user_id', selectedUserId)
+      .is('fechado_em', null)
+      .maybeSingle();
+
+    if (errBusca) {
+      toast({ title: 'Erro', description: errBusca.message, variant: 'destructive' });
+      setEntregando(false);
+      return;
+    }
+
+    let erro = null;
+    if (ciclo) {
+      const { error } = await supabase
+        .from('ciclos_mostruario')
+        .update({ aberto_em: hoje })
+        .eq('id', ciclo.id);
+      erro = error;
+    } else {
+      const { error } = await supabase
+        .from('ciclos_mostruario')
+        .insert({ user_id: selectedUserId, aberto_em: hoje });
+      erro = error;
+    }
+
+    if (erro) {
+      toast({ title: 'Erro ao registrar entrega', description: erro.message, variant: 'destructive' });
+      setEntregando(false);
+      return;
+    }
+
+    const dataAcerto = new Date();
+    dataAcerto.setDate(dataAcerto.getDate() + 30);
+    const acertoFormatado = dataAcerto.toLocaleDateString('pt-BR');
+
+    toast({
+      title: 'Maleta entregue!',
+      description: `Data do acerto: ${acertoFormatado}`,
+    });
+
+    setConfirmarEntrega(false);
+    setEntregando(false);
   }
 
   function enviarGarantiaWhatsApp() {
@@ -460,117 +353,15 @@ export default function Mostruario() {
 
   const selectedUsuario = usuarios.find((u) => u.user_id === selectedUserId);
 
+  const dataAcertoPreview = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toLocaleDateString('pt-BR');
+  })();
+
   return (
     <div className="space-y-6">
-      {/* Toggle de view */}
-      <div className="flex gap-2">
-        <button
-          onClick={() => setView('revendedora')}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${
-            view === 'revendedora' ? 'bg-rosa text-white border-rosa' : 'bg-white text-ink-soft border-border hover:border-rosa/40'
-          }`}
-        >
-          <List size={14} /> Por Revendedora
-        </button>
-        <button
-          onClick={() => { setView('geral'); if (estoqueGeral.length === 0) loadEstoqueGeral(); }}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${
-            view === 'geral' ? 'bg-rosa text-white border-rosa' : 'bg-white text-ink-soft border-border hover:border-rosa/40'
-          }`}
-        >
-          <LayoutGrid size={14} /> Estoque Geral
-        </button>
-      </div>
-
-      {/* View: Estoque Geral */}
-      {view === 'geral' && (
-        <div className="space-y-6">
-          {loadingGeral ? (
-            <div className="flex justify-center py-10"><Loader2 className="animate-spin text-rosa" /></div>
-          ) : (
-            <>
-              {/* Formulário de entrada no estoque geral */}
-              <section className="bg-white rounded-2xl border border-bege p-5">
-                <h3 className="font-serif text-xl text-ink mb-4">Entrada no Estoque Geral</h3>
-                <form onSubmit={adicionarAoEstoqueGeral} className="flex flex-col sm:flex-row gap-2">
-                  <SkuCombobox
-                    produtos={produtos.map((p) => ({ id: p.id, sku: p.sku, nome: p.nome, preco_venda: p.preco_venda }))}
-                    value={geralSku}
-                    onChange={setGeralSku}
-                    onSelect={(p) => setGeralSku(p.sku)}
-                    placeholder="SKU ou nome do produto..."
-                    className="flex-1"
-                    inputClassName="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 font-mono"
-                  />
-                  <Input type="number" min={1} value={geralQty} onChange={(e) => setGeralQty(parseInt(e.target.value || '1'))} className="sm:w-24" />
-                  <Button type="submit" disabled={addingGeral} className="bg-rosa hover:bg-rosa/90">
-                    {addingGeral ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                    Adicionar
-                  </Button>
-                </form>
-              </section>
-
-              {/* Todos os produtos com situação de estoque */}
-              <section className="bg-white rounded-2xl border border-bege p-5">
-                <h3 className="font-serif text-xl text-ink mb-4">Produtos ({produtos.length})</h3>
-                {produtos.length === 0 ? (
-                  <p className="text-sm text-ink-soft">Nenhum produto cadastrado.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {produtos.map((p) => {
-                      const geralRow = estoqueGeral.find((r) => r.produto_id === p.id);
-                      const qtdGeral = geralRow?.quantidade ?? 0;
-                      const distribuicao = distribuicaoPorProduto.get(p.id) ?? [];
-                      const qtdRevendedoras = distribuicao.reduce((s, d) => s + d.quantidade, 0);
-                      const semEstoque = qtdGeral === 0 && qtdRevendedoras === 0;
-
-                      return (
-                        <div
-                          key={p.id}
-                          className={`p-3 rounded-xl border ${semEstoque ? 'border-border/40 opacity-60' : 'border-border'}`}
-                        >
-                          {/* Linha principal: SKU + nome + totais */}
-                          <div className="flex items-center gap-3">
-                            <span className="font-mono text-xs text-rosa font-bold w-20 shrink-0">{p.sku}</span>
-                            <span className="text-sm font-medium text-ink flex-1 truncate">{p.nome}</span>
-                            <div className="flex items-center gap-3 shrink-0 text-xs">
-                              <span className={`font-semibold ${qtdGeral > 0 ? 'text-emerald-700' : 'text-ink-soft'}`}>
-                                Geral: {qtdGeral}
-                              </span>
-                              <span className="text-ink-soft">
-                                Revendedoras: <strong className="text-ink">{qtdRevendedoras}</strong>
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Linha por revendedora */}
-                          {distribuicao.length > 0 && (
-                            <div className="mt-2 pl-[92px] space-y-1">
-                              {distribuicao.map((d, i) => (
-                                <div key={i} className="flex items-center gap-2">
-                                  <span className="text-[11px] text-ink-soft">{d.nome}</span>
-                                  <span className="text-[11px] font-semibold text-ink">{d.quantidade} un.</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {semEstoque && (
-                            <p className="mt-1 pl-[92px] text-[11px] text-ink-soft italic">Sem estoque</p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* View: Por Revendedora */}
-      {view === 'revendedora' && <div className="grid grid-cols-1 md:grid-cols-[280px,1fr] gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-[280px,1fr] gap-6">
         {/* Lista de usuários */}
         <aside className="bg-white rounded-2xl border border-bege p-3 max-h-[70vh] overflow-y-auto">
           <p className="px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-ink-soft font-semibold flex items-center gap-2">
@@ -607,7 +398,7 @@ export default function Mostruario() {
                     {estoque.length} SKUs · {estoque.reduce((s, e) => s + e.quantidade, 0)} peças
                   </p>
                 </div>
-                <div>
+                <div className="flex gap-2">
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -627,6 +418,14 @@ export default function Mostruario() {
                       <FileSpreadsheet size={14} className="mr-2" />
                     )}
                     Importar CSV
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => setConfirmarEntrega(true)}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  >
+                    <Truck size={14} className="mr-2" />
+                    Entregar Maleta
                   </Button>
                 </div>
               </div>
@@ -780,7 +579,74 @@ export default function Mostruario() {
             </>
           )}
         </section>
-      </div>}
+      </div>
+
+      {/* Modal: Confirmar Entrega da Maleta */}
+      {confirmarEntrega && selectedUsuario && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setConfirmarEntrega(false)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-serif text-xl text-ink">Confirmar Entrega</h3>
+              <button
+                onClick={() => setConfirmarEntrega(false)}
+                className="text-ink-soft hover:text-ink"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="mb-5 p-4 rounded-xl bg-bege-light space-y-2">
+              <div className="flex items-center gap-2">
+                <Truck size={16} className="text-emerald-600 shrink-0" />
+                <p className="text-sm font-medium text-ink">
+                  Entregar maleta para <strong>{selectedUsuario.display_name ?? 'Revendedora'}</strong>?
+                </p>
+              </div>
+              <div className="mt-3 space-y-1 text-sm text-ink-soft">
+                <p>
+                  <span className="font-medium text-ink">Data de entrega:</span>{' '}
+                  {new Date().toLocaleDateString('pt-BR')}
+                </p>
+                <p>
+                  <span className="font-medium text-ink">Data do acerto:</span>{' '}
+                  <span className="text-emerald-700 font-semibold">{dataAcertoPreview}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => setConfirmarEntrega(false)}
+                disabled={entregando}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                onClick={entregarMaleta}
+                disabled={entregando}
+              >
+                {entregando ? (
+                  <Loader2 size={14} className="animate-spin mr-2" />
+                ) : (
+                  <CheckCircle2 size={14} className="mr-2" />
+                )}
+                Confirmar Entrega
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Vender */}
       {vendaItem && (
