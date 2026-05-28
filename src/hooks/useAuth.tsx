@@ -7,6 +7,7 @@ type Profile = {
   user_id: string;
   display_name: string | null;
   telefone: string | null;
+  parceira_id: string | null;
 };
 
 type AuthCtx = {
@@ -37,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Busca profile pelo user_id (= auth.uid)
     const { data: prof } = await supabase
       .from('profiles')
-      .select('id, user_id, display_name, telefone')
+      .select('id, user_id, display_name, telefone, parceira_id')
       .eq('user_id', uid)
       .maybeSingle();
 

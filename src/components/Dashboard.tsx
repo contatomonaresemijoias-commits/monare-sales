@@ -51,9 +51,13 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     async function load() {
       setLoading(true);
+      
       const [{ data: saldoData }, { data: vendasData }] = await Promise.all([
         supabase.rpc('saldo_ciclo_aberto', { _user_id: user!.id }),
         supabase
@@ -62,13 +66,33 @@ export default function Dashboard() {
           .eq('user_id', user!.id)
           .order('data_venda', { ascending: false })
           .limit(50),
+
       ]);
-      setSaldo(saldoData?.[0] ?? null);
-      setVendas((vendasData ?? []) as Venda[]);
+
+      if (saldoResult.error) console.error('[Dashboard] saldo:', saldoResult.error);
+      if (vendasErr) console.error('[Dashboard] vendas:', vendasErr);
+      const vendasLista = (vendasData ?? []) as Venda[];
+      const saldoRpc = (saldoResult.data as any)?.[0] ?? null;
+
+      // Se não tem parceira_id, calcula totais direto das vendas
+      if (!parceiraId && !saldoRpc) {
+        const totalVendas = vendasLista.reduce((acc, v) => acc + (v.valor_venda ?? 0), 0);
+        setSaldo({
+          ciclo_id: '',
+          aberto_em: '',
+          total_vendas: totalVendas,
+          qtd_vendas: vendasLista.length,
+          total_comissao: 0,
+        });
+      } else {
+        setSaldo(saldoRpc);
+      }
+
+      setVendas(vendasLista);
       setLoading(false);
     }
     load();
-  }, [user]);
+  }, [user, profile?.parceira_id]);
 
   if (loading) {
     return (

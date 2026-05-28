@@ -1,22 +1,27 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
-// Restringe CORS ao domínio da aplicação. Em produção, substitua pela URL real.
-const ALLOWED_ORIGIN = Deno.env.get('APP_ORIGIN') ?? 'https://tybuxoxugidepqyxjfem.supabase.co';
+// Lista de origins permitidos — separe por vírgula em APP_ORIGIN
+// Ex: APP_ORIGIN=http://62.171.158.41,https://meudominio.com.br
+const ALLOWED_ORIGINS: Set<string> = new Set(
+  (Deno.env.get('APP_ORIGIN') ?? '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean),
+);
 
 function corsHeaders(origin: string | null) {
-  const allowed = origin === ALLOWED_ORIGIN ? origin : ALLOWED_ORIGIN;
-  return {
-    'Access-Control-Allow-Origin': allowed,
+  const allowed = origin && ALLOWED_ORIGINS.has(origin) ? origin : null;
+  const headers: Record<string, string> = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Vary': 'Origin',
   };
+  if (allowed) headers['Access-Control-Allow-Origin'] = allowed;
+  return headers;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-const MIN_PASSWORD_LEN = 10;
-// Pelo menos: 1 maiúscula, 1 minúscula, 1 dígito, 1 caractere especial
-const PASSWORD_COMPLEXITY_RE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':",.<>?/\\|`~])/;
+const MIN_PASSWORD_LEN = 6;
 
 const SUPABASE_URL  = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -82,11 +87,6 @@ Deno.serve(async (req) => {
       // Validação de força de senha
       if (password.length < MIN_PASSWORD_LEN) {
         return new Response(JSON.stringify({ error: `Senha deve ter ao menos ${MIN_PASSWORD_LEN} caracteres` }), {
-          status: 400, headers: { ...headers, 'Content-Type': 'application/json' },
-        });
-      }
-      if (!PASSWORD_COMPLEXITY_RE.test(password)) {
-        return new Response(JSON.stringify({ error: 'Senha deve conter maiúscula, minúscula, número e caractere especial' }), {
           status: 400, headers: { ...headers, 'Content-Type': 'application/json' },
         });
       }

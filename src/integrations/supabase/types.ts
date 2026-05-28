@@ -14,62 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      clientes: {
-        Row: {
-          created_at: string
-          id: string
-          nome: string
-          user_id: string | null
-          updated_at: string
-          whatsapp: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          nome: string
-          user_id?: string | null
-          updated_at?: string
-          whatsapp: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          nome?: string
-          user_id?: string | null
-          updated_at?: string
-          whatsapp?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "clientes_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      categorias: {
-        Row: {
-          created_at: string
-          id: string
-          nome: string
-          prefixo: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          nome: string
-          prefixo: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          nome?: string
-          prefixo?: string
-        }
-        Relationships: []
-      }
       ciclos_mostruario: {
         Row: {
           aberto_em: string
@@ -77,7 +21,7 @@ export type Database = {
           fechado_em: string | null
           id: string
           observacao: string | null
-          user_id: string
+          parceira_id: string
           total_comissao: number
           total_vendas: number
         }
@@ -87,7 +31,7 @@ export type Database = {
           fechado_em?: string | null
           id?: string
           observacao?: string | null
-          user_id: string
+          parceira_id: string
           total_comissao?: number
           total_vendas?: number
         }
@@ -97,25 +41,25 @@ export type Database = {
           fechado_em?: string | null
           id?: string
           observacao?: string | null
-          user_id?: string
+          parceira_id?: string
           total_comissao?: number
           total_vendas?: number
         }
         Relationships: [
           {
-            foreignKeyName: "ciclos_mostruario_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: "ciclos_mostruario_parceira_id_fkey"
+            columns: ["parceira_id"]
             isOneToOne: false
-            referencedRelation: "users"
+            referencedRelation: "parceiras"
             referencedColumns: ["id"]
           },
         ]
       }
-      estoque: {
+      estoque_parceiras: {
         Row: {
           created_at: string
           id: string
-          user_id: string
+          parceira_id: string
           produto_id: string
           quantidade: number
           quantidade_vendida: number
@@ -124,7 +68,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
-          user_id: string
+          parceira_id: string
           produto_id: string
           quantidade?: number
           quantidade_vendida?: number
@@ -133,7 +77,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
-          user_id?: string
+          parceira_id?: string
           produto_id?: string
           quantidade?: number
           quantidade_vendida?: number
@@ -141,14 +85,14 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "estoque_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: "estoque_parceiras_parceira_id_fkey"
+            columns: ["parceira_id"]
             isOneToOne: false
-            referencedRelation: "users"
+            referencedRelation: "parceiras"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "estoque_produto_id_fkey"
+            foreignKeyName: "estoque_parceiras_produto_id_fkey"
             columns: ["produto_id"]
             isOneToOne: false
             referencedRelation: "produtos"
@@ -156,10 +100,36 @@ export type Database = {
           },
         ]
       }
+      parceiras: {
+        Row: {
+          ativa: boolean
+          comissao_percentual: number
+          created_at: string
+          id: string
+          nome: string
+          whatsapp: string | null
+        }
+        Insert: {
+          ativa?: boolean
+          comissao_percentual?: number
+          created_at?: string
+          id?: string
+          nome: string
+          whatsapp?: string | null
+        }
+        Update: {
+          ativa?: boolean
+          comissao_percentual?: number
+          created_at?: string
+          id?: string
+          nome?: string
+          whatsapp?: string | null
+        }
+        Relationships: []
+      }
       produtos: {
         Row: {
           ativo: boolean
-          categoria_id: string | null
           created_at: string
           descricao: string | null
           id: string
@@ -169,7 +139,6 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean
-          categoria_id?: string | null
           created_at?: string
           descricao?: string | null
           id?: string
@@ -179,7 +148,6 @@ export type Database = {
         }
         Update: {
           ativo?: boolean
-          categoria_id?: string | null
           created_at?: string
           descricao?: string | null
           id?: string
@@ -187,21 +155,14 @@ export type Database = {
           preco_venda?: number
           sku?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "produtos_categoria_id_fkey"
-            columns: ["categoria_id"]
-            isOneToOne: false
-            referencedRelation: "categorias"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       profiles: {
         Row: {
           created_at: string
           display_name: string | null
           id: string
+          parceira_id: string | null
           updated_at: string
           user_id: string
         }
@@ -209,6 +170,7 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
+          parceira_id?: string | null
           updated_at?: string
           user_id: string
         }
@@ -216,10 +178,19 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
+          parceira_id?: string | null
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_parceira_id_fkey"
+            columns: ["parceira_id"]
+            isOneToOne: false
+            referencedRelation: "parceiras"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
@@ -255,7 +226,7 @@ export type Database = {
           estoque_id: string | null
           id: string
           ip_venda: string | null
-          user_id: string | null
+          parceira_id: string | null
           produto_id: string | null
           produto_nome: string
           termo_aceito: boolean
@@ -274,7 +245,7 @@ export type Database = {
           estoque_id?: string | null
           id?: string
           ip_venda?: string | null
-          user_id?: string | null
+          parceira_id?: string | null
           produto_id?: string | null
           produto_nome: string
           termo_aceito?: boolean
@@ -293,7 +264,7 @@ export type Database = {
           estoque_id?: string | null
           id?: string
           ip_venda?: string | null
-          user_id?: string | null
+          parceira_id?: string | null
           produto_id?: string | null
           produto_nome?: string
           termo_aceito?: boolean
@@ -312,14 +283,14 @@ export type Database = {
             foreignKeyName: "vendas_estoque_id_fkey"
             columns: ["estoque_id"]
             isOneToOne: false
-            referencedRelation: "estoque"
+            referencedRelation: "estoque_parceiras"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "vendas_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: "vendas_parceira_id_fkey"
+            columns: ["parceira_id"]
             isOneToOne: false
-            referencedRelation: "users"
+            referencedRelation: "parceiras"
             referencedColumns: ["id"]
           },
           {
@@ -336,8 +307,9 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      current_parceira_id: { Args: never; Returns: string }
       fechar_ciclo: {
-        Args: { _observacao?: string; _user_id: string }
+        Args: { _observacao?: string; _parceira_id: string }
         Returns: string
       }
       has_role: {
@@ -359,7 +331,7 @@ export type Database = {
         }[]
       }
       saldo_ciclo_aberto: {
-        Args: { _user_id: string }
+        Args: { _parceira_id: string }
         Returns: {
           aberto_em: string
           ciclo_id: string
@@ -370,7 +342,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "administrador" | "revendedora" | "b2b"
+      app_role: "admin" | "parceira" | "vendedora"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -498,7 +470,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["administrador", "revendedora", "b2b"],
+      app_role: ["admin", "parceira", "vendedora"],
     },
   },
 } as const
