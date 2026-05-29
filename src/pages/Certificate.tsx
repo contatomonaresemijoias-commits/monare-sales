@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
-import { QRCodeSVG } from 'qrcode.react';
 import { ShieldCheck, Gem, Instagram, Star, Droplets, Box, Loader2, Download, ExternalLink } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { INSTAGRAM_URL, getCertificateBaseUrl, formatDateBR, getWarrantyExpiryBR } from '@/lib/monare';
+import { INSTAGRAM_URL, formatDateBR, getWarrantyExpiryBR } from '@/lib/monare';
 import { generateCertificatePDF, downloadPDF } from '@/lib/generateCertificate';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -108,7 +107,6 @@ function CertificadoPage({ id, useCodigo }: { id: string; useCodigo: boolean }) 
     );
   }
 
-  const certUrl      = `${getCertificateBaseUrl()}?codigo=${venda.codigo_garantia}`;
   const purchaseDate = formatDateBR(venda.data_venda || venda.created_at);
   const expiryDate   = getWarrantyExpiryBR(venda.data_venda || venda.created_at);
 
@@ -168,6 +166,7 @@ function CertificadoPage({ id, useCodigo }: { id: string; useCodigo: boolean }) 
               { label: 'Cliente',        value: venda.cliente_nome },
               { label: 'Peça',           value: venda.produto_nome },
               { label: 'Data da Compra', value: purchaseDate },
+              ...(venda.consultora_nome ? [{ label: 'Nome', value: venda.consultora_nome }] : []),
             ].map(({ label, value }) => (
               <div key={label} className="flex items-baseline justify-between">
                 <span className="text-ink-soft text-xs uppercase tracking-wide">{label}</span>
@@ -180,15 +179,6 @@ function CertificadoPage({ id, useCodigo }: { id: string; useCodigo: boolean }) 
                 {expiryDate}
               </span>
             </div>
-          </div>
-
-          <div className="flex flex-col items-center mb-6">
-            <div className="p-4 rounded-2xl border border-border bg-white shadow-sm">
-              <QRCodeSVG value={certUrl} size={110} fgColor="#374151" bgColor="transparent" level="M" />
-            </div>
-            <p className="text-[10px] text-ink-soft mt-2.5 uppercase tracking-[0.15em]">
-              Aponte a câmera para validar
-            </p>
           </div>
 
           <div className="bg-bege-soft-gradient rounded-2xl p-4 mb-6">
