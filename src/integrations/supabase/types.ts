@@ -21,9 +21,9 @@ export type Database = {
           fechado_em: string | null
           id: string
           observacao: string | null
-          parceira_id: string
           total_comissao: number
           total_vendas: number
+          user_id: string
         }
         Insert: {
           aberto_em?: string
@@ -31,9 +31,9 @@ export type Database = {
           fechado_em?: string | null
           id?: string
           observacao?: string | null
-          parceira_id: string
           total_comissao?: number
           total_vendas?: number
+          user_id: string
         }
         Update: {
           aberto_em?: string
@@ -41,91 +41,64 @@ export type Database = {
           fechado_em?: string | null
           id?: string
           observacao?: string | null
-          parceira_id?: string
           total_comissao?: number
           total_vendas?: number
+          user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "ciclos_mostruario_parceira_id_fkey"
-            columns: ["parceira_id"]
+            foreignKeyName: "ciclos_mostruario_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: "parceiras"
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
       }
-      estoque_parceiras: {
+      estoque: {
         Row: {
           created_at: string
           id: string
-          parceira_id: string
           produto_id: string
           quantidade: number
           quantidade_vendida: number
           updated_at: string
+          user_id: string
         }
         Insert: {
           created_at?: string
           id?: string
-          parceira_id: string
           produto_id: string
           quantidade?: number
           quantidade_vendida?: number
           updated_at?: string
+          user_id: string
         }
         Update: {
           created_at?: string
           id?: string
-          parceira_id?: string
           produto_id?: string
           quantidade?: number
           quantidade_vendida?: number
           updated_at?: string
+          user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "estoque_parceiras_parceira_id_fkey"
-            columns: ["parceira_id"]
-            isOneToOne: false
-            referencedRelation: "parceiras"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "estoque_parceiras_produto_id_fkey"
+            foreignKeyName: "estoque_produto_id_fkey"
             columns: ["produto_id"]
             isOneToOne: false
             referencedRelation: "produtos"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "estoque_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
         ]
-      }
-      parceiras: {
-        Row: {
-          ativa: boolean
-          comissao_percentual: number
-          created_at: string
-          id: string
-          nome: string
-          whatsapp: string | null
-        }
-        Insert: {
-          ativa?: boolean
-          comissao_percentual?: number
-          created_at?: string
-          id?: string
-          nome: string
-          whatsapp?: string | null
-        }
-        Update: {
-          ativa?: boolean
-          comissao_percentual?: number
-          created_at?: string
-          id?: string
-          nome?: string
-          whatsapp?: string | null
-        }
-        Relationships: []
       }
       produtos: {
         Row: {
@@ -162,7 +135,7 @@ export type Database = {
           created_at: string
           display_name: string | null
           id: string
-          parceira_id: string | null
+          telefone: string | null
           updated_at: string
           user_id: string
         }
@@ -170,7 +143,7 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
-          parceira_id?: string | null
+          telefone?: string | null
           updated_at?: string
           user_id: string
         }
@@ -178,19 +151,11 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
-          parceira_id?: string | null
+          telefone?: string | null
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "profiles_parceira_id_fkey"
-            columns: ["parceira_id"]
-            isOneToOne: false
-            referencedRelation: "parceiras"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       user_roles: {
         Row: {
@@ -224,12 +189,13 @@ export type Database = {
           created_at: string
           data_venda: string
           estoque_id: string | null
+          garantia_uuid: string | null
           id: string
           ip_venda: string | null
-          parceira_id: string | null
           produto_id: string | null
           produto_nome: string
           termo_aceito: boolean
+          user_id: string | null
           validade_garantia: string | null
           valor_venda: number | null
         }
@@ -243,12 +209,13 @@ export type Database = {
           created_at?: string
           data_venda: string
           estoque_id?: string | null
+          garantia_uuid?: string | null
           id?: string
           ip_venda?: string | null
-          parceira_id?: string | null
           produto_id?: string | null
           produto_nome: string
           termo_aceito?: boolean
+          user_id?: string | null
           validade_garantia?: string | null
           valor_venda?: number | null
         }
@@ -262,12 +229,13 @@ export type Database = {
           created_at?: string
           data_venda?: string
           estoque_id?: string | null
+          garantia_uuid?: string | null
           id?: string
           ip_venda?: string | null
-          parceira_id?: string | null
           produto_id?: string | null
           produto_nome?: string
           termo_aceito?: boolean
+          user_id?: string | null
           validade_garantia?: string | null
           valor_venda?: number | null
         }
@@ -283,14 +251,7 @@ export type Database = {
             foreignKeyName: "vendas_estoque_id_fkey"
             columns: ["estoque_id"]
             isOneToOne: false
-            referencedRelation: "estoque_parceiras"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "vendas_parceira_id_fkey"
-            columns: ["parceira_id"]
-            isOneToOne: false
-            referencedRelation: "parceiras"
+            referencedRelation: "estoque"
             referencedColumns: ["id"]
           },
           {
@@ -307,9 +268,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      current_parceira_id: { Args: never; Returns: string }
       fechar_ciclo: {
-        Args: { _observacao?: string; _parceira_id: string }
+        Args: { _user_id: string; _observacao?: string }
         Returns: string
       }
       has_role: {
@@ -324,14 +284,39 @@ export type Database = {
         Returns: {
           cliente_nome: string
           codigo_garantia: string
+          consultora_nome: string
           created_at: string
           data_venda: string
           id: string
           produto_nome: string
+          produto_sku: string
+        }[]
+      }
+      lookup_certificate_by_codigo: {
+        Args: { _codigo: string }
+        Returns: {
+          cliente_nome: string
+          codigo_garantia: string
+          consultora_nome: string
+          created_at: string
+          data_venda: string
+          id: string
+          produto_nome: string
+          produto_sku: string
+        }[]
+      }
+      lookup_garantia_venda: {
+        Args: { _uuid: string }
+        Returns: {
+          cliente_nome: string
+          codigo_garantia: string
+          data_compra: string
+          produto_nome: string
+          validade_garantia: string
         }[]
       }
       saldo_ciclo_aberto: {
-        Args: { _parceira_id: string }
+        Args: { _user_id: string }
         Returns: {
           aberto_em: string
           ciclo_id: string
@@ -342,7 +327,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "parceira" | "vendedora"
+      app_role: "administrador" | "revendedora" | "b2b"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -470,7 +455,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "parceira", "vendedora"],
+      app_role: ["administrador", "revendedora", "b2b"],
     },
   },
 } as const

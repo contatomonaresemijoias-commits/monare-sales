@@ -17,6 +17,7 @@ type Venda = {
   cliente_nome: string;
   data_venda: string;
   valor_venda: number | null;
+  comissao_valor: number | null;
   codigo_garantia: string;
   garantia_uuid: string | null;
   produtos: { sku: string } | null;
@@ -57,32 +58,32 @@ export default function Dashboard() {
     }
     async function load() {
       setLoading(true);
-      
-      const [{ data: saldoData }, { data: vendasData }] = await Promise.all([
+
+      const [{ data: saldoData, error: saldoErr }, { data: vendasData, error: vendasErr }] = await Promise.all([
         supabase.rpc('saldo_ciclo_aberto', { _user_id: user!.id }),
         supabase
           .from('vendas')
-          .select('id, produto_nome, cliente_nome, data_venda, valor_venda, codigo_garantia, garantia_uuid, produtos(sku)')
+          .select('id, produto_nome, cliente_nome, data_venda, valor_venda, comissao_valor, codigo_garantia, garantia_uuid, produtos(sku)')
           .eq('user_id', user!.id)
           .order('data_venda', { ascending: false })
           .limit(50),
-
       ]);
 
-      if (saldoResult.error) console.error('[Dashboard] saldo:', saldoResult.error);
+      if (saldoErr) console.error('[Dashboard] saldo:', saldoErr);
       if (vendasErr) console.error('[Dashboard] vendas:', vendasErr);
-      const vendasLista = (vendasData ?? []) as Venda[];
-      const saldoRpc = (saldoResult.data as any)?.[0] ?? null;
 
-      // Se não tem parceira_id, calcula totais direto das vendas
-      if (!parceiraId && !saldoRpc) {
+      const vendasLista = (vendasData ?? []) as Venda[];
+      const saldoRpc = (saldoData as any)?.[0] ?? null;
+
+      if (!saldoRpc) {
         const totalVendas = vendasLista.reduce((acc, v) => acc + (v.valor_venda ?? 0), 0);
+        const totalComissao = vendasLista.reduce((acc, v) => acc + (v.comissao_valor ?? 0), 0);
         setSaldo({
           ciclo_id: '',
           aberto_em: '',
           total_vendas: totalVendas,
           qtd_vendas: vendasLista.length,
-          total_comissao: 0,
+          total_comissao: totalComissao,
         });
       } else {
         setSaldo(saldoRpc);
@@ -92,7 +93,7 @@ export default function Dashboard() {
       setLoading(false);
     }
     load();
-  }, [user, profile?.parceira_id]);
+  }, [user]);
 
   if (loading) {
     return (
@@ -101,8 +102,6 @@ export default function Dashboard() {
       </div>
     );
   }
-
-  const consultoraName = profile?.display_name ?? '';
 
   const acertoDate = saldo?.aberto_em
     ? new Date(new Date(saldo.aberto_em).getTime() + 30 * 86_400_000)
@@ -176,7 +175,12 @@ export default function Dashboard() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <p className="font-semibold text-sm text-[#2C2825]">{fmt(v.valor_venda)}</p>
+                  <div className="text-right">
+                    <p className="font-semibold text-sm text-[#2C2825]">{fmt(v.valor_venda)}</p>
+                    {v.comissao_valor != null && v.comissao_valor > 0 && (
+                      <p className="text-[10px] text-[#C9607E]">{fmt(v.comissao_valor)} comissão</p>
+                    )}
+                  </div>
                   <GarantiaLink venda={v} />
                 </div>
               </div>
