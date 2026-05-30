@@ -22,11 +22,11 @@ const FONT_SIZE       = 11;
 const TEXT_COLOR      = rgb(0.35, 0.12, 0.22); // rosa-escuro igual ao PDF
 
 const FIELDS = {
-  clientName:  { x: px(4.52), y: py(11.04 + LABEL_OFFSET_Y) },
-  sku:         { x: px(4.52), y: py(12.41 + LABEL_OFFSET_Y) },
-  date:        { x: px(12.84), y: py(12.41 + LABEL_OFFSET_Y) },
-  description: { x: px(4.52), y: py(13.68 + LABEL_OFFSET_Y) },
-  consultora:  { x: px(4.52), y: py(14.95 + LABEL_OFFSET_Y) },
+  clientName:  { x: px(4.02), y: py(10.60 + LABEL_OFFSET_Y) },
+  sku:         { x: px(4.02), y: py(11.91 + LABEL_OFFSET_Y) },
+  date:        { x: px(12.84), y: py(11.91 + LABEL_OFFSET_Y) },
+  description: { x: px(4.02), y: py(13.18 + LABEL_OFFSET_Y) },
+  consultora:  { x: px(4.02), y: py(14.40 + LABEL_OFFSET_Y) },
 } as const;
 
 // ─── Interface pública ────────────────────────────────────────────────────────

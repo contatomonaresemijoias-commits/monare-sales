@@ -182,14 +182,6 @@ function CertificadoPage({ id, useCodigo }: { id: string; useCodigo: boolean }) 
             </div>
           </div>
 
-          <div className="flex flex-col items-center mb-6">
-            <div className="p-4 rounded-2xl border border-border bg-white shadow-sm">
-              <QRCodeSVG value={certUrl} size={110} fgColor="#374151" bgColor="transparent" level="M" />
-            </div>
-            <p className="text-[10px] text-ink-soft mt-2.5 uppercase tracking-[0.15em]">
-              Aponte a câmera para validar
-            </p>
-          </div>
 
           <div className="bg-bege-soft-gradient rounded-2xl p-4 mb-6">
             <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-rosa mb-3 flex items-center gap-2">
