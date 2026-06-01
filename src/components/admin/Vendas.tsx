@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { Loader2, FileText, Wallet, CheckCheck, Search, X, Share2, Download } from 'lucide-react';
+import { Loader2, FileText, Wallet, CheckCheck, Search, X, Share2, Download, ShoppingBag, Package } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
@@ -45,7 +45,8 @@ type Saldo = {
   aberto_em: string;
   total_vendas: number;
   total_comissao: number;
-  qtd_vendas: number;
+  comissao_percentual: number;
+  qtd_vendas: bigint | number;
 };
 
 const DIAS_CICLO = 30;
@@ -61,7 +62,8 @@ function acertoDe(s: Saldo | undefined): Date | null {
 }
 
 function urgencia(s: Saldo | undefined): 'vencido' | 'proximo' | 'ok' | 'sem-saldo' {
-  if (!s || s.qtd_vendas === 0) return 'sem-saldo';
+  const qtd = Number(s?.qtd_vendas ?? 0);
+  if (!s || qtd === 0) return 'sem-saldo';
   const acerto = acertoDe(s);
   if (!acerto) return 'ok';
   const diff = Math.floor((acerto.getTime() - Date.now()) / 86_400_000);
@@ -109,11 +111,13 @@ function PdfShareButton({ url, sku }: { url: string; sku: string }) {
 function SaldoCard({
   u,
   s,
+  naoVendidas,
   fechando,
   fecharCiclo,
 }: {
   u: Usuario;
   s: Saldo | undefined;
+  naoVendidas: number;
   fechando: string | null;
   fecharCiclo: (u: Usuario) => void;
 }) {
@@ -121,6 +125,8 @@ function SaldoCard({
   const acerto = acertoDe(s);
   const acertoFmt = acerto ? acerto.toLocaleDateString('pt-BR') : '—';
   const urg = urgencia(s);
+  const qtdVendidas = Number(s?.qtd_vendas ?? 0);
+  const pct = s?.comissao_percentual ?? 0;
 
   const diffDias = acerto
     ? Math.floor((acerto.getTime() - Date.now()) / 86_400_000)
@@ -150,15 +156,39 @@ function SaldoCard({
         </span>
       </div>
       <p className="text-[10px] uppercase tracking-wider text-ink-soft mt-0.5">
-        Ciclo desde {aberto} · {s?.qtd_vendas ?? 0} venda(s)
+        Ciclo desde {aberto}
       </p>
+
+      {/* Resumo vendidas / não vendidas */}
+      <div className="mt-2 flex gap-2">
+        <div className="flex-1 flex items-center gap-1.5 rounded-lg bg-emerald-50 border border-emerald-100 px-2.5 py-1.5">
+          <ShoppingBag size={11} className="text-emerald-600 shrink-0" />
+          <div>
+            <p className="text-[9px] uppercase tracking-wider text-emerald-700">Vendidas</p>
+            <p className="text-sm font-bold text-emerald-800">{qtdVendidas}</p>
+          </div>
+        </div>
+        <div className="flex-1 flex items-center gap-1.5 rounded-lg bg-bege-light border border-border px-2.5 py-1.5">
+          <Package size={11} className="text-ink-soft shrink-0" />
+          <div>
+            <p className="text-[9px] uppercase tracking-wider text-ink-soft">Em estoque</p>
+            <p className="text-sm font-bold text-ink">{naoVendidas}</p>
+          </div>
+        </div>
+      </div>
+
       <div className="mt-3 space-y-1.5 text-xs">
         <div className="flex justify-between items-center">
           <span className="text-ink-soft">Total vendido</span>
           <span className="font-semibold text-ink">{fmt(s?.total_vendas)}</span>
         </div>
         <div className="flex justify-between items-center border-t border-border/50 pt-1.5">
-          <span className="text-ink-soft font-medium">Comissão a pagar</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-ink-soft font-medium">Comissão a pagar</span>
+            {pct > 0 && (
+              <span className="text-[9px] px-1 py-0.5 rounded bg-rosa/10 text-rosa font-semibold">{pct}%</span>
+            )}
+          </div>
           <span className="font-bold text-rosa text-sm">{fmt(s?.total_comissao)}</span>
         </div>
       </div>
@@ -167,7 +197,7 @@ function SaldoCard({
         size="sm"
         variant="outline"
         className="w-full mt-3 text-xs"
-        disabled={fechando === u.user_id || !s || s.qtd_vendas === 0}
+        disabled={fechando === u.user_id || !s || Number(s.qtd_vendas) === 0}
         onClick={() => fecharCiclo(u)}
       >
         {fechando === u.user_id ? <Loader2 size={12} className="animate-spin" /> : <CheckCheck size={12} />}
@@ -181,6 +211,7 @@ export default function Vendas() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [vendas, setVendas] = useState<Venda[]>([]);
   const [saldos, setSaldos] = useState<Record<string, Saldo>>({});
+  const [estoquesSoma, setEstoquesSoma] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [filtro, setFiltro] = useState('');
   const [filtroInput, setFiltroInput] = useState('');
@@ -217,6 +248,11 @@ export default function Vendas() {
       .order('created_at', { ascending: false })
       .limit(500);
 
+    // Soma de estoque por usuária
+    const { data: estoqueData } = await supabase
+      .from('estoque')
+      .select('user_id, quantidade');
+
     const rolesMap: Record<string, string> = {};
     for (const r of rolesData ?? []) rolesMap[r.user_id] = r.role;
 
@@ -227,6 +263,12 @@ export default function Vendas() {
 
     setUsuarios(usuariosComRole);
     setVendas((vs ?? []) as Venda[]);
+
+    const somaEstoque: Record<string, number> = {};
+    for (const row of estoqueData ?? []) {
+      somaEstoque[row.user_id] = (somaEstoque[row.user_id] ?? 0) + (row.quantidade ?? 0);
+    }
+    setEstoquesSoma(somaEstoque);
 
     const map: Record<string, Saldo> = {};
     for (const u of us ?? []) {
@@ -243,7 +285,7 @@ export default function Vendas() {
     const saldo = saldos[u.user_id];
     const nome = u.display_name ?? u.user_id;
     const msg = saldo
-      ? `Acerto de contas para "${nome}"?\n\nVendas: ${saldo.qtd_vendas}\nTotal vendido: ${fmt(saldo.total_vendas)}\nComissão a pagar: ${fmt(saldo.total_comissao)}\n\nO ciclo será fechado e o saldo voltará a zero.`
+      ? `Acerto de contas para "${nome}"?\n\nVendas: ${Number(saldo.qtd_vendas)}\nTotal vendido: ${fmt(saldo.total_vendas)}\nComissão a pagar: ${fmt(saldo.total_comissao)}\n\nO ciclo será fechado, o saldo voltará a zero e o estoque será zerado.`
       : `Fechar ciclo de "${nome}"?`;
     if (!confirm(msg)) return;
 
@@ -253,7 +295,9 @@ export default function Vendas() {
     if (error) {
       toast({ title: 'Erro ao fechar ciclo', description: error.message, variant: 'destructive' });
     } else {
-      toast({ title: 'Ciclo fechado', description: 'Saldo zerado e novo ciclo aberto.' });
+      toast({ title: 'Ciclo fechado', description: 'Saldo zerado, estoque zerado e novo ciclo aberto.' });
+      setFiltro('');
+      setFiltroInput('');
       load();
     }
   }
@@ -287,7 +331,14 @@ export default function Vendas() {
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {sortPorAcerto(usuarios.filter((u) => u.role === 'b2b'), saldos).map((u) => (
-                <SaldoCard key={u.user_id} u={u} s={saldos[u.user_id]} fechando={fechando} fecharCiclo={fecharCiclo} />
+                <SaldoCard
+                  key={u.user_id}
+                  u={u}
+                  s={saldos[u.user_id]}
+                  naoVendidas={estoquesSoma[u.user_id] ?? 0}
+                  fechando={fechando}
+                  fecharCiclo={fecharCiclo}
+                />
               ))}
             </div>
           </div>
@@ -301,7 +352,14 @@ export default function Vendas() {
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {sortPorAcerto(usuarios.filter((u) => u.role !== 'b2b'), saldos).map((u) => (
-                <SaldoCard key={u.user_id} u={u} s={saldos[u.user_id]} fechando={fechando} fecharCiclo={fecharCiclo} />
+                <SaldoCard
+                  key={u.user_id}
+                  u={u}
+                  s={saldos[u.user_id]}
+                  naoVendidas={estoquesSoma[u.user_id] ?? 0}
+                  fechando={fechando}
+                  fecharCiclo={fecharCiclo}
+                />
               ))}
             </div>
           </div>

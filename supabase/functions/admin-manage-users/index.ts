@@ -1,7 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
-// Lista de origins permitidos — separe por vírgula em APP_ORIGIN
-// Ex: APP_ORIGIN=http://62.171.158.41,https://meudominio.com.br
 const ALLOWED_ORIGINS: Set<string> = new Set(
   (Deno.env.get('APP_ORIGIN') ?? '')
     .split(',')
@@ -34,7 +32,6 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers });
 
   try {
-    // --- Autenticação ---
     const authHeader = req.headers.get('Authorization') ?? '';
     const userClient = createClient(SUPABASE_URL, ANON, {
       global: { headers: { Authorization: authHeader } },
@@ -46,7 +43,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // --- Autorização: apenas administrador ---
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
     const { data: roleRow } = await admin
       .from('user_roles')
@@ -68,30 +64,24 @@ Deno.serve(async (req) => {
     // ACTION: create
     // ---------------------------------------------------------------
     if (action === 'create') {
-      const { email, password, display_name, role } = body;
+      const { email, password, display_name, role, erp_id } = body;
 
-      // Validação de campos obrigatórios
       if (!email || !password) {
         return new Response(JSON.stringify({ error: 'E-mail e senha obrigatórios' }), {
           status: 400, headers: { ...headers, 'Content-Type': 'application/json' },
         });
       }
-
-      // Validação de formato de e-mail (server-side)
       if (!EMAIL_RE.test(email) || email.length > 254) {
         return new Response(JSON.stringify({ error: 'Formato de e-mail inválido' }), {
           status: 400, headers: { ...headers, 'Content-Type': 'application/json' },
         });
       }
-
-      // Validação de força de senha
       if (password.length < MIN_PASSWORD_LEN) {
         return new Response(JSON.stringify({ error: `Senha deve ter ao menos ${MIN_PASSWORD_LEN} caracteres` }), {
           status: 400, headers: { ...headers, 'Content-Type': 'application/json' },
         });
       }
 
-      // Sanitização de display_name
       const safeName = typeof display_name === 'string'
         ? display_name.trim().slice(0, 100)
         : '';
@@ -101,7 +91,8 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Whitelist de roles: admin NÃO pode se atribuir via esta rota
+      const safeErpId = typeof erp_id === 'string' ? erp_id.trim().slice(0, 50) || null : null;
+
       const allowedRoles = ['revendedora', 'b2b'] as const;
       const assignedRole = allowedRoles.includes(role) ? role : 'revendedora';
 
@@ -115,7 +106,7 @@ Deno.serve(async (req) => {
 
       const newId = created.user.id;
       await admin.from('profiles').upsert(
-        { user_id: newId, display_name: safeName },
+        { user_id: newId, display_name: safeName, erp_id: safeErpId },
         { onConflict: 'user_id' },
       );
       await admin.from('user_roles').insert({ user_id: newId, role: assignedRole });
@@ -141,7 +132,6 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Impede deletar outro administrador
       const { data: targetRole } = await admin
         .from('user_roles')
         .select('role')
@@ -168,7 +158,7 @@ Deno.serve(async (req) => {
     if (action === 'list') {
       const { data: profiles } = await admin
         .from('profiles')
-        .select('id, user_id, display_name, created_at')
+        .select('id, user_id, display_name, erp_id, ativo, created_at')
         .order('created_at', { ascending: false });
 
       const { data: rolesAll } = await admin.from('user_roles').select('user_id, role');
@@ -182,11 +172,12 @@ Deno.serve(async (req) => {
         rolesMap.set(r.user_id, arr);
       });
 
-      // Não expõe dados sensíveis desnecessários — apenas o que o admin precisa
       const result = (profiles ?? []).map((p) => ({
         id: p.id,
         user_id: p.user_id,
         display_name: p.display_name,
+        erp_id: (p as any).erp_id ?? null,
+        ativo: (p as any).ativo ?? true,
         created_at: p.created_at,
         email: emailMap.get(p.user_id) ?? null,
         roles: rolesMap.get(p.user_id) ?? [],
@@ -197,14 +188,103 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ---------------------------------------------------------------
+    // ACTION: reset_password
+    // ---------------------------------------------------------------
+    if (action === 'reset_password') {
+      const { user_id, new_password } = body;
+      if (!user_id || typeof user_id !== 'string') {
+        return new Response(JSON.stringify({ error: 'user_id obrigatório' }), {
+          status: 400, headers: { ...headers, 'Content-Type': 'application/json' },
+        });
+      }
+      if (!new_password || typeof new_password !== 'string' || new_password.length < MIN_PASSWORD_LEN) {
+        return new Response(JSON.stringify({ error: `Nova senha deve ter ao menos ${MIN_PASSWORD_LEN} caracteres` }), {
+          status: 400, headers: { ...headers, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { data: targetRole } = await admin
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user_id)
+        .eq('role', 'administrador')
+        .maybeSingle();
+
+      if (targetRole) {
+        return new Response(JSON.stringify({ error: 'Não é possível alterar senha de outro administrador' }), {
+          status: 403, headers: { ...headers, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { error: pErr } = await admin.auth.admin.updateUserById(user_id, { password: new_password });
+      if (pErr) throw pErr;
+
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...headers, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ---------------------------------------------------------------
+    // ACTION: toggle_active
+    // ---------------------------------------------------------------
+    if (action === 'toggle_active') {
+      const { user_id, ativo } = body;
+      if (!user_id || typeof user_id !== 'string') {
+        return new Response(JSON.stringify({ error: 'user_id obrigatório' }), {
+          status: 400, headers: { ...headers, 'Content-Type': 'application/json' },
+        });
+      }
+      if (typeof ativo !== 'boolean') {
+        return new Response(JSON.stringify({ error: 'ativo (boolean) obrigatório' }), {
+          status: 400, headers: { ...headers, 'Content-Type': 'application/json' },
+        });
+      }
+      if (user_id === user.id) {
+        return new Response(JSON.stringify({ error: 'Você não pode desativar sua própria conta' }), {
+          status: 400, headers: { ...headers, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { error: tErr } = await admin
+        .from('profiles')
+        .update({ ativo } as any)
+        .eq('user_id', user_id);
+      if (tErr) throw tErr;
+
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...headers, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ---------------------------------------------------------------
+    // ACTION: update_erp_id
+    // ---------------------------------------------------------------
+    if (action === 'update_erp_id') {
+      const { user_id, erp_id } = body;
+      if (!user_id || typeof user_id !== 'string') {
+        return new Response(JSON.stringify({ error: 'user_id obrigatório' }), {
+          status: 400, headers: { ...headers, 'Content-Type': 'application/json' },
+        });
+      }
+      const safeErpId = typeof erp_id === 'string' ? erp_id.trim().slice(0, 50) || null : null;
+      const { error: eErr } = await admin
+        .from('profiles')
+        .update({ erp_id: safeErpId } as any)
+        .eq('user_id', user_id);
+      if (eErr) throw eErr;
+
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...headers, 'Content-Type': 'application/json' },
+      });
+    }
+
     return new Response(JSON.stringify({ error: 'Ação inválida' }), {
       status: 400, headers: { ...headers, 'Content-Type': 'application/json' },
     });
 
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : 'Erro interno';
     console.error('[admin-manage-users]', e);
-    // Não vaza detalhes do erro interno para o cliente
     return new Response(JSON.stringify({ error: 'Erro interno do servidor' }), {
       status: 500, headers: { ...corsHeaders(req.headers.get('Origin')), 'Content-Type': 'application/json' },
     });
