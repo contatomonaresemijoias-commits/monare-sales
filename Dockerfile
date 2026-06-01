@@ -1,29 +1,23 @@
-# Stage 1: build
-FROM node:20-alpine AS builder
-
+FROM node:24-alpine AS builder
 WORKDIR /app
-
 COPY package*.json ./
-RUN npm ci
-
+RUN npm install
 COPY . .
 
-# Variáveis de build injetadas via ARG (passadas pelo docker-compose)
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_PUBLISHABLE_KEY
+ARG VITE_SUPABASE_PROJECT_ID
 ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
 ENV VITE_SUPABASE_PUBLISHABLE_KEY=$VITE_SUPABASE_PUBLISHABLE_KEY
+ENV VITE_SUPABASE_PROJECT_ID=$VITE_SUPABASE_PROJECT_ID
 
 RUN npm run build
 
-# Stage 2: serve
-FROM nginx:stable-alpine
-
-COPY --from=builder /app/dist /usr/share/nginx/html
-
-# Configuração para SPA (react-router-dom)
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
+FROM node:24-alpine
+RUN npm install -g serve
+RUN adduser -D appuser
+WORKDIR /app
+COPY --chown=appuser:appuser --from=builder /app/dist ./dist
+USER appuser
+EXPOSE 3100
+CMD ["serve", "-s", "dist", "-l", "3100"]

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Loader2, TrendingUp, Wallet, ClipboardList, FileText } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -51,49 +51,48 @@ export default function Dashboard() {
   const [vendas, setVendas] = useState<Venda[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!user) {
-      setLoading(false);
-      return;
+  const load = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+
+    const { data: saldoData } = await supabase.rpc('saldo_ciclo_aberto', { _user_id: user.id });
+    const cicloAtual = saldoData?.[0] ?? null;
+    setSaldo(cicloAtual);
+
+    // Mostra apenas vendas do ciclo atual — após acerto, histórico fica limpo
+    if (cicloAtual?.ciclo_id) {
+      const { data: vendasData } = await supabase
+        .from('vendas')
+        .select('id, produto_nome, cliente_nome, data_venda, valor_venda, codigo_garantia, garantia_uuid, produtos(sku)')
+        .eq('user_id', user.id)
+        .eq('ciclo_id', cicloAtual.ciclo_id)
+        .order('data_venda', { ascending: false })
+        .limit(50);
+      setVendas((vendasData ?? []) as Venda[]);
+    } else {
+      setVendas([]);
     }
-    async function load() {
-      setLoading(true);
 
-      const [{ data: saldoData, error: saldoErr }, { data: vendasData, error: vendasErr }] = await Promise.all([
-        supabase.rpc('saldo_ciclo_aberto', { _user_id: user!.id }),
-        supabase
-          .from('vendas')
-          .select('id, produto_nome, cliente_nome, data_venda, valor_venda, comissao_valor, codigo_garantia, garantia_uuid, produtos(sku)')
-          .eq('user_id', user!.id)
-          .order('data_venda', { ascending: false })
-          .limit(50),
-      ]);
-
-      if (saldoErr) console.error('[Dashboard] saldo:', saldoErr);
-      if (vendasErr) console.error('[Dashboard] vendas:', vendasErr);
-
-      const vendasLista = (vendasData ?? []) as Venda[];
-      const saldoRpc = (saldoData as any)?.[0] ?? null;
-
-      if (!saldoRpc) {
-        const totalVendas = vendasLista.reduce((acc, v) => acc + (v.valor_venda ?? 0), 0);
-        const totalComissao = vendasLista.reduce((acc, v) => acc + (v.comissao_valor ?? 0), 0);
-        setSaldo({
-          ciclo_id: '',
-          aberto_em: '',
-          total_vendas: totalVendas,
-          qtd_vendas: vendasLista.length,
-          total_comissao: totalComissao,
-        });
-      } else {
-        setSaldo(saldoRpc);
-      }
-
-      setVendas(vendasLista);
-      setLoading(false);
-    }
-    load();
+    setLoading(false);
   }, [user]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Atualiza em tempo real quando uma nova venda é registrada
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel(`dashboard-vendas-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'vendas', filter: `user_id=eq.${user.id}` },
+        () => load(),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user, load]);
 
   if (loading) {
     return (
@@ -105,6 +104,10 @@ export default function Dashboard() {
 
   const acertoDate = saldo?.aberto_em
     ? new Date(new Date(saldo.aberto_em).getTime() + 30 * 86_400_000)
+    : null;
+
+  const pct = saldo && saldo.total_vendas > 0
+    ? ((saldo.total_comissao / saldo.total_vendas) * 100).toFixed(0)
     : null;
 
   return (
@@ -132,10 +135,8 @@ export default function Dashboard() {
               Comissão a receber
             </p>
             <p className="font-bold text-[#C9607E] text-base">{fmt(saldo?.total_comissao)}</p>
-            {saldo?.total_vendas && saldo.total_vendas > 0 ? (
-              <p className="text-[10px] text-[#9B8E7E] mt-0.5">
-                {((saldo.total_comissao / saldo.total_vendas) * 100).toFixed(0)}% sobre vendido
-              </p>
+            {pct !== null ? (
+              <p className="text-[10px] text-[#9B8E7E] mt-0.5">{pct}% sobre vendido</p>
             ) : (
               <p className="text-[10px] text-[#9B8E7E] mt-0.5">Mín. R$ 400 para comissão</p>
             )}
@@ -152,7 +153,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Histórico de vendas */}
+      {/* Histórico de vendas do ciclo atual */}
       <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-[#E8DDD0] p-5">
         <h2 className="text-[11px] tracking-[0.3em] text-[#9B8E7E] uppercase font-medium flex items-center gap-2 mb-4">
           <ClipboardList size={13} className="text-[#C9A96E]" />
