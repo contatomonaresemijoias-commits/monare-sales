@@ -166,7 +166,7 @@ function CertificadoPage({ id, useCodigo }: { id: string; useCodigo: boolean }) 
               { label: 'Cliente',        value: venda.cliente_nome },
               { label: 'Peça',           value: venda.produto_nome },
               { label: 'Data da Compra', value: purchaseDate },
-              ...(venda.consultora_nome ? [{ label: 'Nome', value: venda.consultora_nome }] : []),
+              ...(venda.consultora_nome && !venda.consultora_nome.includes('@') ? [{ label: 'Nome', value: venda.consultora_nome }] : []),
             ].map(({ label, value }) => (
               <div key={label} className="flex items-baseline justify-between">
                 <span className="text-ink-soft text-xs uppercase tracking-wide">{label}</span>

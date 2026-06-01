@@ -130,6 +130,12 @@ export default function AuthPage() {
               {mode === 'login' ? 'Entrar' : 'Criar Conta'}
             </button>
 
+            {mode === 'login' && (
+              <p className="text-xs text-ink-soft text-center">
+                Esqueceu sua senha? Entre em contato com o administrador.
+              </p>
+            )}
+
             <button
               type="button"
               onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}

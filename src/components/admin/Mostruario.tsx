@@ -12,7 +12,9 @@ import {
   MessageCircle,
   CheckCircle2,
   Truck,
+  PackageOpen,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -26,7 +28,7 @@ import {
   formatDateBR,
 } from '@/lib/monare';
 
-type Usuario = { user_id: string; display_name: string | null };
+type Usuario = { user_id: string; display_name: string | null; erp_id?: string | null };
 type Produto = { id: string; sku: string; nome: string; ativo: boolean; preco_venda: number };
 type EstoqueItem = {
   id: string;
@@ -63,6 +65,10 @@ export default function Mostruario() {
   const [confirmarEntrega, setConfirmarEntrega] = useState(false);
   const [entregando, setEntregando] = useState(false);
 
+  // Recolher Maleta
+  const [confirmarRecolher, setConfirmarRecolher] = useState(false);
+  const [recolhendo, setRecolhendo] = useState(false);
+
   // Venda
   const [vendaItem, setVendaItem] = useState<EstoqueItem | null>(null);
   const [vendaForm, setVendaForm] = useState({
@@ -82,12 +88,13 @@ export default function Mostruario() {
   useEffect(() => {
     (async () => {
       const [{ data: us }, { data: pr }] = await Promise.all([
-        supabase.from('profiles').select('user_id, display_name').order('display_name'),
+        supabase.from('profiles').select('user_id, display_name, erp_id, ativo').order('display_name'),
         supabase.from('produtos').select('*').eq('ativo', true).order('sku'),
       ]);
-      setUsuarios((us ?? []) as Usuario[]);
+      const ativos = ((us ?? []) as any[]).filter((u) => u.ativo !== false);
+      setUsuarios(ativos as Usuario[]);
       setProdutos((pr ?? []) as Produto[]);
-      if (us && us.length && !selectedUserId) setSelectedUserId(us[0].user_id);
+      if (ativos.length && !selectedUserId) setSelectedUserId(ativos[0].user_id);
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -180,42 +187,116 @@ export default function Mostruario() {
     if (selectedUserId) loadEstoque(selectedUserId);
   }
 
+  // Parse rows from a spreadsheet/CSV file using SheetJS.
+  // Returns [{erp_id?, sku, qty}] after normalising headers and skipping blank rows.
+  function parseImportRows(data: unknown[][]): { erp_id: string | null; sku: string; qty: number }[] {
+    if (!data.length) return [];
+
+    // Detect whether the first row is a header (contains non-numeric text in first cell)
+    const firstCell = String(data[0][0] ?? '').trim().toUpperCase();
+    const isHeader = isNaN(Number(firstCell)) && !/^[A-Z]{2,}[-_]?\d+$/.test(firstCell);
+    const rows = isHeader ? data.slice(1) : data;
+
+    const result: { erp_id: string | null; sku: string; qty: number }[] = [];
+
+    for (const row of rows) {
+      const cells = row.map((c) => String(c ?? '').trim());
+      if (!cells.some(Boolean)) continue; // skip blank rows
+
+      if (cells.length >= 3) {
+        // Format: erp_id | sku | qty
+        const erp_id = cells[0] || null;
+        const sku    = cells[1].toUpperCase();
+        const qty    = parseInt(cells[2]) || 0;
+        if (sku && qty > 0) result.push({ erp_id, sku, qty });
+      } else if (cells.length === 2) {
+        // Format: sku | qty
+        const sku = cells[0].toUpperCase();
+        const qty = parseInt(cells[1]) || 0;
+        if (sku && qty > 0) result.push({ erp_id: null, sku, qty });
+      }
+    }
+    return result;
+  }
+
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file || !selectedUserId) return;
+    if (!file) return;
     setAdding(true);
+
     try {
-      const text = await file.text();
-      const rows = text
-        .split(/\r?\n/)
-        .map((r) => r.split(','))
-        .filter((r) => r[0]?.trim());
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const raw: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
+      const rows = parseImportRows(raw);
+      if (!rows.length) {
+        toast({ title: 'Arquivo sem dados reconhecíveis', variant: 'destructive' });
+        return;
+      }
+
+      // Build erp_id → user_id map from loaded usuarios
+      const erpMap = new Map<string, string>();
+      for (const u of usuarios) {
+        if (u.erp_id) erpMap.set(u.erp_id.trim(), u.user_id);
+      }
+
+      const errors: string[] = [];
       let adicionados = 0;
-      for (const row of rows) {
-        const sku = row[0]?.trim()?.toUpperCase();
-        const qtd = parseInt(row[1]?.trim() || '1');
-        if (!sku || isNaN(qtd) || qtd < 1) continue;
-        const prod = produtos.find((p) => p.sku.toUpperCase() === sku);
-        if (!prod) continue;
 
-        const existing = estoque.find((it) => it.produto_id === prod.id);
+      for (const { erp_id, sku, qty } of rows) {
+        // Resolve target user
+        let targetUserId: string | null = null;
+        if (erp_id) {
+          targetUserId = erpMap.get(erp_id) ?? null;
+          if (!targetUserId) {
+            errors.push(`ERP "${erp_id}" não encontrado — linha com SKU ${sku} ignorada`);
+            continue;
+          }
+        } else {
+          if (!selectedUserId) {
+            errors.push(`SKU ${sku}: sem revendedora selecionada e sem ERP ID na linha`);
+            continue;
+          }
+          targetUserId = selectedUserId;
+        }
+
+        const prod = produtos.find((p) => p.sku.toUpperCase() === sku);
+        if (!prod) {
+          errors.push(`SKU "${sku}" não cadastrado — linha ignorada`);
+          continue;
+        }
+
+        // Use estoque only when targetUserId === selectedUserId (already loaded)
+        const estoqueAtual = targetUserId === selectedUserId ? estoque : null;
+        const existing = estoqueAtual?.find((it) => it.produto_id === prod.id);
+
         if (existing) {
           await supabase
             .from('estoque')
-            .update({ quantidade: existing.quantidade + qtd })
+            .update({ quantidade: existing.quantidade + qty })
             .eq('id', existing.id);
         } else {
           await supabase
             .from('estoque')
-            .insert({ user_id: selectedUserId, produto_id: prod.id, quantidade: qtd });
+            .insert({ user_id: targetUserId, produto_id: prod.id, quantidade: qty });
         }
         adicionados++;
       }
-      toast({ title: 'Importação concluída', description: `${adicionados} SKUs processados.` });
-      await loadEstoque(selectedUserId);
+
+      const descParts = [`${adicionados} SKU(s) processado(s).`];
+      if (errors.length) descParts.push(`${errors.length} ignorado(s): ${errors.slice(0, 3).join('; ')}${errors.length > 3 ? '…' : ''}`);
+
+      toast({
+        title: 'Importação concluída',
+        description: descParts.join(' '),
+        variant: errors.length ? 'destructive' : 'default',
+      });
+
+      if (selectedUserId) await loadEstoque(selectedUserId);
     } catch (err: any) {
-      toast({ title: 'Erro no CSV', description: err.message, variant: 'destructive' });
+      toast({ title: 'Erro ao importar arquivo', description: err.message, variant: 'destructive' });
     } finally {
       setAdding(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -320,15 +401,32 @@ export default function Mostruario() {
 
     const dataAcerto = new Date();
     dataAcerto.setDate(dataAcerto.getDate() + 30);
-    const acertoFormatado = dataAcerto.toLocaleDateString('pt-BR');
 
     toast({
       title: 'Maleta entregue!',
-      description: `Data do acerto: ${acertoFormatado}`,
+      description: `Data do acerto: ${dataAcerto.toLocaleDateString('pt-BR')}`,
     });
 
     setConfirmarEntrega(false);
     setEntregando(false);
+  }
+
+  async function recolherMaleta() {
+    if (!selectedUserId) return;
+    setRecolhendo(true);
+
+    const { error } = await supabase.rpc('recolher_maleta', { _user_id: selectedUserId } as any);
+
+    if (error) {
+      toast({ title: 'Erro ao recolher maleta', description: error.message, variant: 'destructive' });
+      setRecolhendo(false);
+      return;
+    }
+
+    toast({ title: 'Maleta recolhida', description: 'Estoque da revendedora zerado.' });
+    setConfirmarRecolher(false);
+    setRecolhendo(false);
+    await loadEstoque(selectedUserId);
   }
 
   function enviarGarantiaWhatsApp() {
@@ -359,6 +457,8 @@ export default function Mostruario() {
     return d.toLocaleDateString('pt-BR');
   })();
 
+  const totalEstoque = estoque.reduce((s, e) => s + e.quantidade, 0);
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-[280px,1fr] gap-6">
@@ -380,7 +480,10 @@ export default function Mostruario() {
                   : 'text-ink-soft hover:bg-bege-light'
               }`}
             >
-              {u.display_name ?? u.user_id}
+              <span>{u.display_name ?? u.user_id}</span>
+              {u.erp_id && (
+                <span className="ml-1.5 text-[10px] opacity-60 font-mono">#{u.erp_id}</span>
+              )}
             </button>
           ))}
         </aside>
@@ -395,14 +498,14 @@ export default function Mostruario() {
                 <div>
                   <h3 className="font-serif text-2xl text-ink">{selectedUsuario.display_name ?? 'Usuário'}</h3>
                   <p className="text-xs text-ink-soft uppercase tracking-wider">
-                    {estoque.length} SKUs · {estoque.reduce((s, e) => s + e.quantidade, 0)} peças
+                    {estoque.length} SKUs · {totalEstoque} peças
                   </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".csv,text/csv"
+                    accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     onChange={handleFileUpload}
                     className="hidden"
                   />
@@ -417,7 +520,18 @@ export default function Mostruario() {
                     ) : (
                       <FileSpreadsheet size={14} className="mr-2" />
                     )}
-                    Importar CSV
+                    Importar CSV/Excel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-amber-400 text-amber-700 hover:bg-amber-50"
+                    onClick={() => setConfirmarRecolher(true)}
+                    disabled={totalEstoque === 0}
+                    title="Recolher maleta (zera o estoque da revendedora)"
+                  >
+                    <PackageOpen size={14} className="mr-2" />
+                    Recolher Maleta
                   </Button>
                   <Button
                     type="button"
@@ -593,10 +707,7 @@ export default function Mostruario() {
           >
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-serif text-xl text-ink">Confirmar Entrega</h3>
-              <button
-                onClick={() => setConfirmarEntrega(false)}
-                className="text-ink-soft hover:text-ink"
-              >
+              <button onClick={() => setConfirmarEntrega(false)} className="text-ink-soft hover:text-ink">
                 <X size={18} />
               </button>
             </div>
@@ -621,27 +732,54 @@ export default function Mostruario() {
             </div>
 
             <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1"
-                onClick={() => setConfirmarEntrega(false)}
-                disabled={entregando}
-              >
+              <Button type="button" variant="outline" className="flex-1" onClick={() => setConfirmarEntrega(false)} disabled={entregando}>
                 Cancelar
               </Button>
-              <Button
-                type="button"
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-                onClick={entregarMaleta}
-                disabled={entregando}
-              >
-                {entregando ? (
-                  <Loader2 size={14} className="animate-spin mr-2" />
-                ) : (
-                  <CheckCircle2 size={14} className="mr-2" />
-                )}
+              <Button type="button" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={entregarMaleta} disabled={entregando}>
+                {entregando ? <Loader2 size={14} className="animate-spin mr-2" /> : <CheckCircle2 size={14} className="mr-2" />}
                 Confirmar Entrega
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Confirmar Recolhimento da Maleta */}
+      {confirmarRecolher && selectedUsuario && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setConfirmarRecolher(false)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-serif text-xl text-ink">Recolher Maleta</h3>
+              <button onClick={() => setConfirmarRecolher(false)} className="text-ink-soft hover:text-ink">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="mb-5 p-4 rounded-xl bg-amber-50 border border-amber-200 space-y-2">
+              <div className="flex items-center gap-2">
+                <PackageOpen size={16} className="text-amber-600 shrink-0" />
+                <p className="text-sm font-medium text-ink">
+                  Recolher maleta de <strong>{selectedUsuario.display_name ?? 'Revendedora'}</strong>?
+                </p>
+              </div>
+              <p className="text-xs text-amber-700 mt-1">
+                Isso irá zerar o estoque desta revendedora ({totalEstoque} peças). O ciclo financeiro permanece aberto.
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" className="flex-1" onClick={() => setConfirmarRecolher(false)} disabled={recolhendo}>
+                Cancelar
+              </Button>
+              <Button type="button" className="flex-1 bg-amber-600 hover:bg-amber-700 text-white" onClick={recolherMaleta} disabled={recolhendo}>
+                {recolhendo ? <Loader2 size={14} className="animate-spin mr-2" /> : <PackageOpen size={14} className="mr-2" />}
+                Confirmar Recolhimento
               </Button>
             </div>
           </div>
@@ -662,10 +800,7 @@ export default function Mostruario() {
               <h3 className="font-serif text-xl text-ink">
                 {vendaSucesso ? 'Venda Concluída!' : 'Registrar Venda'}
               </h3>
-              <button
-                onClick={() => setVendaItem(null)}
-                className="text-ink-soft hover:text-ink"
-              >
+              <button onClick={() => setVendaItem(null)} className="text-ink-soft hover:text-ink">
                 <X size={18} />
               </button>
             </div>
@@ -675,9 +810,7 @@ export default function Mostruario() {
                 <div className="text-center p-4 rounded-xl bg-emerald-50 border border-emerald-200">
                   <CheckCircle2 className="mx-auto text-emerald-600 mb-2" size={32} />
                   <p className="text-xs uppercase tracking-wider text-emerald-700">Garantia gerada</p>
-                  <p className="font-mono font-bold text-lg text-emerald-800">
-                    {vendaSucesso.codigo_garantia}
-                  </p>
+                  <p className="font-mono font-bold text-lg text-emerald-800">{vendaSucesso.codigo_garantia}</p>
                   <p className="text-xs text-emerald-700 mt-1">
                     Válida até {formatDateBR(vendaSucesso.validade_garantia)}
                   </p>
@@ -685,52 +818,32 @@ export default function Mostruario() {
                 <p className="text-sm text-ink-soft text-center">
                   A joia foi baixada do estoque e a comissão foi calculada.
                 </p>
-                <Button
-                  type="button"
-                  onClick={enviarGarantiaWhatsApp}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700"
-                >
+                <Button type="button" onClick={enviarGarantiaWhatsApp} className="w-full bg-emerald-600 hover:bg-emerald-700">
                   <MessageCircle size={14} className="mr-2" />
                   Enviar Certificado no WhatsApp
                 </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setVendaItem(null)}
-                  className="w-full"
-                >
+                <Button type="button" variant="ghost" onClick={() => setVendaItem(null)} className="w-full">
                   Fechar
                 </Button>
               </div>
             ) : (
               <>
                 <div className="mb-4 p-3 rounded-xl bg-bege-light">
-                  <p className="text-[10px] uppercase tracking-wider text-ink-soft">
-                    {vendaItem.produto.sku}
-                  </p>
+                  <p className="text-[10px] uppercase tracking-wider text-ink-soft">{vendaItem.produto.sku}</p>
                   <p className="font-medium text-ink">{vendaItem.produto.nome}</p>
-                  <p className="text-xs text-ink-soft">
-                    Estoque disponível: {vendaItem.quantidade}
-                  </p>
+                  <p className="text-xs text-ink-soft">Estoque disponível: {vendaItem.quantidade}</p>
                 </div>
                 <form onSubmit={registrarVenda} className="space-y-3">
                   <Input
                     placeholder="Nome da cliente"
                     value={vendaForm.cliente_nome}
-                    onChange={(e) =>
-                      setVendaForm({ ...vendaForm, cliente_nome: e.target.value })
-                    }
+                    onChange={(e) => setVendaForm({ ...vendaForm, cliente_nome: e.target.value })}
                     required
                   />
                   <Input
                     placeholder="WhatsApp (15) 99999-9999"
                     value={vendaForm.cliente_whatsapp}
-                    onChange={(e) =>
-                      setVendaForm({
-                        ...vendaForm,
-                        cliente_whatsapp: formatWhatsApp(e.target.value),
-                      })
-                    }
+                    onChange={(e) => setVendaForm({ ...vendaForm, cliente_whatsapp: formatWhatsApp(e.target.value) })}
                     required
                   />
                   <div className="flex items-center gap-2">
@@ -748,22 +861,12 @@ export default function Mostruario() {
                   <Input
                     type="date"
                     value={vendaForm.data_venda}
-                    onChange={(e) =>
-                      setVendaForm({ ...vendaForm, data_venda: e.target.value })
-                    }
+                    onChange={(e) => setVendaForm({ ...vendaForm, data_venda: e.target.value })}
                     max={getToday()}
                     required
                   />
-                  <Button
-                    type="submit"
-                    disabled={vendendo}
-                    className="w-full bg-rosa hover:bg-rosa/90"
-                  >
-                    {vendendo ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      <ShoppingBag size={14} className="mr-2" />
-                    )}
+                  <Button type="submit" disabled={vendendo} className="w-full bg-rosa hover:bg-rosa/90">
+                    {vendendo ? <Loader2 size={14} className="animate-spin" /> : <ShoppingBag size={14} className="mr-2" />}
                     Confirmar Venda
                   </Button>
                 </form>

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 
 export default function NovaUsuaria() {
-  const [form, setForm] = useState({ nome: '', email: '', senha: '', role: 'revendedora' });
+  const [form, setForm] = useState({ nome: '', email: '', senha: '', role: 'revendedora', erp_id: '' });
   const [busy, setBusy] = useState(false);
 
   async function criar(e: React.FormEvent) {
@@ -23,6 +23,7 @@ export default function NovaUsuaria() {
         password: form.senha,
         display_name: form.nome.trim(),
         role: form.role,
+        erp_id: form.erp_id.trim() || null,
       },
     });
     setBusy(false);
@@ -33,7 +34,7 @@ export default function NovaUsuaria() {
     }
 
     toast({ title: 'Usuária criada com sucesso' });
-    setForm({ nome: '', email: '', senha: '', role: 'revendedora' });
+    setForm({ nome: '', email: '', senha: '', role: 'revendedora', erp_id: '' });
   }
 
   return (
@@ -63,6 +64,11 @@ export default function NovaUsuaria() {
           onChange={(e) => setForm({ ...form, senha: e.target.value })}
           minLength={6}
           required
+        />
+        <Input
+          placeholder="Código ERP (opcional)"
+          value={form.erp_id}
+          onChange={(e) => setForm({ ...form, erp_id: e.target.value })}
         />
         <div className="flex items-center gap-2">
           <label className="text-xs text-ink-soft uppercase tracking-wider whitespace-nowrap">Tipo</label>
