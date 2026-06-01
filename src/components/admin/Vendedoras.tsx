@@ -315,19 +315,25 @@ export default function Vendedoras() {
                     <p className="text-xs text-ink-soft mt-0.5">{selectedUser.email}</p>
                   </div>
 
-                  {/* Ativar / desativar perfil */}
+                  {/* Status ativo/inativo — cor mostra estado atual; clique alterna */}
                   {!selectedUser.roles.includes('administrador') && (
-                    <Button
-                      size="sm"
-                      variant="outline"
+                    <button
                       disabled={salvandoAtivo}
                       onClick={() => toggleAtivo(selectedUser)}
-                      className={selectedUser.ativo ? 'text-destructive border-destructive/40 hover:bg-destructive/10' : 'text-emerald-600 border-emerald-400 hover:bg-emerald-50'}
-                      title={selectedUser.ativo ? 'Desativar perfil' : 'Reativar perfil'}
+                      title={selectedUser.ativo ? 'Clique para desativar' : 'Clique para reativar'}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all disabled:opacity-60 ${
+                        selectedUser.ativo
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                          : 'bg-red-50 text-red-600 border-red-300 hover:bg-red-100'
+                      }`}
                     >
-                      {salvandoAtivo ? <Loader2 size={12} className="animate-spin" /> : selectedUser.ativo ? <PowerOff size={12} /> : <Power size={12} />}
-                      <span className="ml-1 text-xs">{selectedUser.ativo ? 'Desativar' : 'Reativar'}</span>
-                    </Button>
+                      {salvandoAtivo ? (
+                        <Loader2 size={11} className="animate-spin" />
+                      ) : (
+                        <span className={`w-2 h-2 rounded-full ${selectedUser.ativo ? 'bg-emerald-500' : 'bg-red-400'}`} />
+                      )}
+                      {selectedUser.ativo ? 'Ativo' : 'Inativo'}
+                    </button>
                   )}
                 </div>
 
