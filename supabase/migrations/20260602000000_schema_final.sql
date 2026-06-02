@@ -1,7 +1,7 @@
 -- =============================================================
--- SCHEMA CONSOLIDADO — Monare Sales
--- Gerado a partir da consolidação de todas as migrations anteriores.
--- Para banco zerado: delete as migrations antigas e mantenha apenas este arquivo.
+-- SCHEMA FINAL — Monare Sales
+-- Migration única de criação. Para banco zerado, mantenha apenas
+-- este arquivo e o seed (20260602000001_seed.sql).
 -- =============================================================
 
 
@@ -15,7 +15,7 @@ CREATE TYPE public.app_role AS ENUM ('administrador', 'revendedora', 'b2b');
 
 
 -- =============================================================
--- PARTE 2 — TABELAS (CREATE TABLE)
+-- PARTE 2 — TABELAS
 -- =============================================================
 
 -- Categorias de produtos (ex: Anéis, Colares, Pulseiras)
@@ -32,15 +32,15 @@ CREATE UNIQUE INDEX categorias_nome_unique    ON public.categorias (lower(nome))
 
 -- Produtos do catálogo
 CREATE TABLE public.produtos (
-  id           UUID           PRIMARY KEY DEFAULT gen_random_uuid(),
-  sku          TEXT           NOT NULL UNIQUE,
-  nome         TEXT           NOT NULL,
+  id           UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  sku          TEXT          NOT NULL UNIQUE,
+  nome         TEXT          NOT NULL,
   descricao    TEXT,
   material     TEXT,
-  preco_venda  NUMERIC(10,2)  NOT NULL DEFAULT 0,
-  ativo        BOOLEAN        NOT NULL DEFAULT true,
-  categoria_id UUID           REFERENCES public.categorias(id) ON DELETE SET NULL,
-  created_at   TIMESTAMPTZ    NOT NULL DEFAULT now(),
+  preco_venda  NUMERIC(10,2) NOT NULL DEFAULT 0,
+  ativo        BOOLEAN       NOT NULL DEFAULT true,
+  categoria_id UUID          REFERENCES public.categorias(id) ON DELETE SET NULL,
+  created_at   TIMESTAMPTZ   NOT NULL DEFAULT now(),
   CONSTRAINT chk_produtos_preco_positivo CHECK (ativo = false OR preco_venda > 0),
   CONSTRAINT chk_produtos_nome_length    CHECK (char_length(trim(nome)) BETWEEN 2 AND 200) NOT VALID,
   CONSTRAINT chk_produtos_sku_length     CHECK (char_length(trim(sku))  BETWEEN 2 AND 30)  NOT VALID
@@ -56,20 +56,23 @@ CREATE TABLE public.profiles (
   user_id      UUID        NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
   display_name TEXT,
   telefone     TEXT,
+  erp_id       TEXT,
+  ativo        BOOLEAN     NOT NULL DEFAULT true,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT chk_profiles_display_name_length
     CHECK (display_name IS NULL OR char_length(trim(display_name)) BETWEEN 2 AND 100)
 );
 
-CREATE INDEX idx_profiles_user_id ON public.profiles(user_id);
+CREATE INDEX        idx_profiles_user_id    ON public.profiles(user_id);
+CREATE UNIQUE INDEX profiles_erp_id_unique  ON public.profiles(erp_id) WHERE erp_id IS NOT NULL;
 
 
--- Papéis das usuárias (administrador, revendedora, b2b)
+-- Papéis das usuárias
 CREATE TABLE public.user_roles (
-  id         UUID       PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id    UUID       NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  role       app_role   NOT NULL,
+  id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  role       app_role    NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (user_id, role)
 );
@@ -77,13 +80,13 @@ CREATE TABLE public.user_roles (
 
 -- Estoque individual (mostruário da revendedora)
 CREATE TABLE public.estoque (
-  id                UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id           UUID    NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  produto_id        UUID    NOT NULL REFERENCES public.produtos(id) ON DELETE CASCADE,
-  quantidade        INTEGER NOT NULL DEFAULT 0 CHECK (quantidade >= 0),
-  quantidade_vendida INTEGER NOT NULL DEFAULT 0,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  id                 UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id            UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  produto_id         UUID        NOT NULL REFERENCES public.produtos(id) ON DELETE CASCADE,
+  quantidade         INTEGER     NOT NULL DEFAULT 0 CHECK (quantidade >= 0),
+  quantidade_vendida INTEGER     NOT NULL DEFAULT 0,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (user_id, produto_id)
 );
 
@@ -93,9 +96,9 @@ CREATE INDEX idx_estoque_produto_id ON public.estoque(produto_id);
 
 -- Estoque central (geral da empresa)
 CREATE TABLE public.estoque_geral (
-  id         UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
-  produto_id UUID    NOT NULL REFERENCES public.produtos(id) ON DELETE CASCADE,
-  quantidade INTEGER NOT NULL DEFAULT 0 CHECK (quantidade >= 0),
+  id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  produto_id UUID        NOT NULL REFERENCES public.produtos(id) ON DELETE CASCADE,
+  quantidade INTEGER     NOT NULL DEFAULT 0 CHECK (quantidade >= 0),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (produto_id)
 );
@@ -103,14 +106,14 @@ CREATE TABLE public.estoque_geral (
 
 -- Ciclos de mostruário (período para acerto de comissão)
 CREATE TABLE public.ciclos_mostruario (
-  id             UUID           PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id        UUID           NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  aberto_em      TIMESTAMPTZ    NOT NULL DEFAULT now(),
+  id             UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id        UUID          NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  aberto_em      TIMESTAMPTZ   NOT NULL DEFAULT now(),
   fechado_em     TIMESTAMPTZ,
-  total_vendas   NUMERIC(12,2)  NOT NULL DEFAULT 0,
-  total_comissao NUMERIC(12,2)  NOT NULL DEFAULT 0,
+  total_vendas   NUMERIC(12,2) NOT NULL DEFAULT 0,
+  total_comissao NUMERIC(12,2) NOT NULL DEFAULT 0,
   observacao     TEXT,
-  created_at     TIMESTAMPTZ    NOT NULL DEFAULT now()
+  created_at     TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 -- Apenas um ciclo aberto por usuária
@@ -126,8 +129,8 @@ CREATE TABLE public.clientes (
   user_id    UUID        REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT chk_clientes_nome_length      CHECK (char_length(trim(nome)) BETWEEN 2 AND 120),
-  CONSTRAINT chk_clientes_whatsapp_digits  CHECK (whatsapp ~ '^\d{10,11}$')
+  CONSTRAINT chk_clientes_nome_length     CHECK (char_length(trim(nome)) BETWEEN 2 AND 120),
+  CONSTRAINT chk_clientes_whatsapp_digits CHECK (whatsapp ~ '^\d{10,11}$')
 );
 
 CREATE UNIQUE INDEX clientes_whatsapp_unique ON public.clientes (whatsapp);
@@ -146,6 +149,7 @@ CREATE TABLE public.vendas (
   data_venda          DATE          NOT NULL,
   codigo_garantia     TEXT          NOT NULL UNIQUE,
   validade_garantia   DATE,
+  garantia_uuid       UUID,
   valor_venda         NUMERIC(12,2),
   comissao_percentual NUMERIC(5,2),
   comissao_valor      NUMERIC(12,2),
@@ -164,6 +168,7 @@ CREATE TABLE public.vendas (
 );
 
 CREATE INDEX idx_vendas_codigo_garantia ON public.vendas(codigo_garantia);
+CREATE INDEX idx_vendas_garantia_uuid   ON public.vendas(garantia_uuid);
 CREATE INDEX idx_vendas_user_id         ON public.vendas(user_id);
 CREATE INDEX idx_vendas_produto_id      ON public.vendas(produto_id);
 
@@ -187,7 +192,7 @@ $$;
 REVOKE ALL ON FUNCTION public.update_updated_at_column() FROM PUBLIC, anon, authenticated;
 
 
--- Verifica se um usuário possui determinado papel (schema private = não exposta via API)
+-- Verifica se um usuário possui determinado papel
 CREATE OR REPLACE FUNCTION private.has_role(_user_id UUID, _role public.app_role)
 RETURNS BOOLEAN
 LANGUAGE SQL
@@ -231,13 +236,15 @@ $$;
 -- PARTE 4 — FUNÇÕES DE NEGÓCIO (RPCs públicas)
 -- =============================================================
 
--- Consulta pública de certificado de garantia (sem expor SELECT direto na tabela)
+-- Consulta pública de certificado de garantia por UUID interno
 CREATE OR REPLACE FUNCTION public.lookup_certificate(_id UUID)
 RETURNS TABLE (
   id              UUID,
   codigo_garantia TEXT,
   produto_nome    TEXT,
+  produto_sku     TEXT,
   cliente_nome    TEXT,
+  consultora_nome TEXT,
   data_venda      DATE,
   created_at      TIMESTAMPTZ
 )
@@ -246,23 +253,98 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT id, codigo_garantia, produto_nome, cliente_nome, data_venda, created_at
-  FROM public.vendas
-  WHERE id = _id
+  SELECT
+    v.id,
+    v.codigo_garantia,
+    v.produto_nome,
+    COALESCE(p.sku, '')           AS produto_sku,
+    v.cliente_nome,
+    COALESCE(pr.display_name, '') AS consultora_nome,
+    v.data_venda,
+    v.created_at
+  FROM public.vendas v
+  LEFT JOIN public.produtos  p  ON p.id = v.produto_id
+  LEFT JOIN public.profiles  pr ON pr.user_id = v.user_id
+  WHERE v.id = _id
   LIMIT 1;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.lookup_certificate(UUID) TO anon, authenticated;
 
 
--- Saldo do ciclo aberto de uma revendedora (comissão calculada sobre o total do ciclo)
+-- Consulta pública de certificado pelo codigo_garantia (texto)
+CREATE OR REPLACE FUNCTION public.lookup_certificate_by_codigo(_codigo TEXT)
+RETURNS TABLE (
+  id              UUID,
+  codigo_garantia TEXT,
+  produto_nome    TEXT,
+  produto_sku     TEXT,
+  cliente_nome    TEXT,
+  consultora_nome TEXT,
+  data_venda      DATE,
+  created_at      TIMESTAMPTZ
+)
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    v.id,
+    v.codigo_garantia,
+    v.produto_nome,
+    COALESCE(p.sku, '')           AS produto_sku,
+    v.cliente_nome,
+    COALESCE(pr.display_name, '') AS consultora_nome,
+    v.data_venda,
+    v.created_at
+  FROM public.vendas v
+  LEFT JOIN public.produtos  p  ON p.id = v.produto_id
+  LEFT JOIN public.profiles  pr ON pr.user_id = v.user_id
+  WHERE v.codigo_garantia = _codigo
+  LIMIT 1;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.lookup_certificate_by_codigo(TEXT) TO anon, authenticated;
+
+
+-- Consulta pública de todos os itens de uma venda pelo UUID público
+CREATE OR REPLACE FUNCTION public.lookup_garantia_venda(_uuid UUID)
+RETURNS TABLE (
+  cliente_nome      TEXT,
+  data_compra       DATE,
+  codigo_garantia   TEXT,
+  produto_nome      TEXT,
+  validade_garantia DATE
+)
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    v.cliente_nome,
+    v.data_venda        AS data_compra,
+    v.codigo_garantia,
+    v.produto_nome,
+    v.validade_garantia
+  FROM public.vendas v
+  WHERE v.garantia_uuid = _uuid
+  ORDER BY v.created_at;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.lookup_garantia_venda(UUID) TO anon, authenticated;
+
+
+-- Saldo do ciclo aberto de uma revendedora com comissão e percentual
 CREATE OR REPLACE FUNCTION public.saldo_ciclo_aberto(_user_id UUID)
 RETURNS TABLE (
-  ciclo_id       UUID,
-  aberto_em      TIMESTAMPTZ,
-  total_vendas   NUMERIC,
-  total_comissao NUMERIC,
-  qtd_vendas     BIGINT
+  ciclo_id            UUID,
+  aberto_em           TIMESTAMPTZ,
+  total_vendas        NUMERIC,
+  total_comissao      NUMERIC,
+  comissao_percentual NUMERIC,
+  qtd_vendas          BIGINT
 )
 LANGUAGE plpgsql
 STABLE
@@ -287,17 +369,17 @@ BEGIN
       private.comissao_pct(v_role, COALESCE(SUM(v.valor_venda), 0)) / 100.0,
       2
     )::NUMERIC AS total_comissao,
+    private.comissao_pct(v_role, COALESCE(SUM(v.valor_venda), 0))::NUMERIC AS comissao_percentual,
     COUNT(v.id)::BIGINT AS qtd_vendas
   FROM public.ciclos_mostruario c
-  LEFT JOIN public.vendas v
-    ON (v.ciclo_id = c.id OR (v.ciclo_id IS NULL AND v.user_id = _user_id))
+  LEFT JOIN public.vendas v ON v.ciclo_id = c.id
   WHERE c.user_id = _user_id AND c.fechado_em IS NULL
   GROUP BY c.id, c.aberto_em;
 END;
 $$;
 
 
--- Fecha ciclo da revendedora e abre o próximo (somente admin)
+-- Fecha ciclo da revendedora, zera estoque e abre o próximo (somente admin)
 CREATE OR REPLACE FUNCTION public.fechar_ciclo(_user_id UUID, _observacao TEXT DEFAULT NULL)
 RETURNS UUID
 LANGUAGE plpgsql
@@ -344,17 +426,42 @@ BEGIN
     observacao     = COALESCE(_observacao, observacao)
   WHERE id = v_ciclo_id;
 
+  UPDATE public.estoque
+  SET quantidade = 0, updated_at = now()
+  WHERE user_id = _user_id AND quantidade > 0;
+
   INSERT INTO public.ciclos_mostruario (user_id) VALUES (_user_id) RETURNING id INTO v_novo;
   RETURN v_novo;
 END;
 $$;
 
 
+-- Zera estoque da revendedora sem fechar o ciclo financeiro (somente admin)
+CREATE OR REPLACE FUNCTION public.recolher_maleta(_user_id UUID)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NOT private.has_role(auth.uid(), 'administrador'::app_role) THEN
+    RAISE EXCEPTION 'Apenas administradores podem recolher maletas';
+  END IF;
+
+  UPDATE public.estoque
+  SET quantidade = 0, updated_at = now()
+  WHERE user_id = _user_id AND quantidade > 0;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.recolher_maleta(UUID) TO authenticated;
+
+
 -- =============================================================
--- PARTE 5 — TRIGGERS E FUNÇÕES DE TRIGGER
+-- PARTE 5 — TRIGGERS
 -- =============================================================
 
--- Trigger: cria profile ao registrar novo usuário no Auth
+-- Cria profile ao registrar novo usuário no Auth
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -375,7 +482,7 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 
--- Trigger: abre ciclo automaticamente ao criar perfil da revendedora
+-- Abre ciclo automaticamente ao criar perfil da revendedora
 CREATE OR REPLACE FUNCTION public.abrir_ciclo_para_usuario()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -393,11 +500,10 @@ CREATE TRIGGER trg_abrir_ciclo
   FOR EACH ROW EXECUTE FUNCTION public.abrir_ciclo_para_usuario();
 
 
--- Trigger: preenche dados da venda no servidor (anti mass-assignment)
--- Sobrescreve valor_venda com o preço oficial do catálogo.
--- Gera codigo_garantia e validade_garantia no servidor.
--- Valida janela de data_venda (máx 3 dias atrás).
--- Vincula ao ciclo aberto e zera comissão (calculada ao fechar ciclo).
+-- Preenche dados da venda no servidor (anti mass-assignment):
+-- sobrescreve valor_venda com preço do catálogo, gera codigo_garantia e
+-- validade_garantia, valida janela de data_venda (máx 3 dias atrás),
+-- vincula ao ciclo aberto e zera comissão por venda.
 CREATE OR REPLACE FUNCTION public.preencher_dados_venda()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -408,7 +514,6 @@ DECLARE
   v_preco         NUMERIC(12,2);
   v_produto_ativo BOOLEAN;
 BEGIN
-  -- Busca preço e status do produto (ignora valor enviado pelo cliente)
   SELECT preco_venda, ativo
     INTO v_preco, v_produto_ativo
   FROM public.produtos
@@ -423,10 +528,8 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
-  -- Sobrescreve com preço oficial do catálogo
   NEW.valor_venda := v_preco;
 
-  -- Valida janela de data_venda
   IF NEW.data_venda IS NOT NULL THEN
     IF NEW.data_venda::DATE > CURRENT_DATE THEN
       RAISE EXCEPTION 'Data de venda não pode ser no futuro'
@@ -438,17 +541,14 @@ BEGIN
     END IF;
   END IF;
 
-  -- Calcula validade_garantia no servidor (1 ano)
   NEW.validade_garantia := (COALESCE(NEW.data_venda, CURRENT_DATE)::DATE + INTERVAL '1 year')::DATE;
 
-  -- Gera codigo_garantia no servidor (formato: MNR-XXXX-XXXXXX)
   IF NEW.codigo_garantia IS NULL OR length(NEW.codigo_garantia) < 10 THEN
     NEW.codigo_garantia := 'MNR-' ||
       upper(encode(gen_random_bytes(4), 'hex')) || '-' ||
       upper(encode(gen_random_bytes(3), 'hex'));
   END IF;
 
-  -- Vincula ao ciclo aberto da revendedora
   IF NEW.ciclo_id IS NULL AND NEW.user_id IS NOT NULL THEN
     SELECT id INTO NEW.ciclo_id
     FROM public.ciclos_mostruario
@@ -456,7 +556,6 @@ BEGIN
     LIMIT 1;
   END IF;
 
-  -- Comissão calculada ao fechar ciclo — zera por venda
   NEW.comissao_percentual := 0;
   NEW.comissao_valor      := 0;
 
@@ -472,7 +571,7 @@ CREATE TRIGGER trg_preencher_venda
   FOR EACH ROW EXECUTE FUNCTION public.preencher_dados_venda();
 
 
--- Trigger: valida e decrementa estoque ao registrar venda
+-- Valida e decrementa estoque ao registrar venda
 CREATE OR REPLACE FUNCTION public.validar_e_baixar_estoque()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -536,15 +635,15 @@ CREATE TRIGGER set_clientes_updated_at
 -- PARTE 6 — ROW LEVEL SECURITY (RLS)
 -- =============================================================
 
-ALTER TABLE public.categorias       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.produtos         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.profiles         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.user_roles       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.estoque          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.estoque_geral    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.categorias        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.produtos          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_roles        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.estoque           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.estoque_geral     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ciclos_mostruario ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.clientes         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.vendas           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.clientes          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vendas            ENABLE ROW LEVEL SECURITY;
 
 
 -- categorias: leitura pública, escrita somente admin
@@ -558,81 +657,80 @@ CREATE POLICY "categorias_admin_all" ON public.categorias
 
 
 -- produtos: leitura pública, escrita somente admin
-CREATE POLICY "Produtos são públicos para leitura" ON public.produtos
+CREATE POLICY "produtos_public_select" ON public.produtos
   FOR SELECT TO public USING (true);
 
-CREATE POLICY "Admin gerencia produtos" ON public.produtos
+CREATE POLICY "produtos_admin_all" ON public.produtos
   FOR ALL TO authenticated
   USING (private.has_role(auth.uid(), 'administrador'::app_role))
   WITH CHECK (private.has_role(auth.uid(), 'administrador'::app_role));
 
 
 -- profiles: usuária vê/edita o próprio; admin gerencia todos
-CREATE POLICY "Usuário vê o próprio perfil" ON public.profiles
+CREATE POLICY "profiles_select" ON public.profiles
   FOR SELECT TO authenticated
   USING (auth.uid() = user_id OR private.has_role(auth.uid(), 'administrador'::app_role));
 
-CREATE POLICY "Usuário atualiza o próprio perfil" ON public.profiles
+CREATE POLICY "profiles_update" ON public.profiles
   FOR UPDATE TO authenticated
   USING (auth.uid() = user_id OR private.has_role(auth.uid(), 'administrador'::app_role))
   WITH CHECK (auth.uid() = user_id OR private.has_role(auth.uid(), 'administrador'::app_role));
 
-CREATE POLICY "Admin gerencia perfis" ON public.profiles
+CREATE POLICY "profiles_insert" ON public.profiles
   FOR INSERT TO authenticated
   WITH CHECK (private.has_role(auth.uid(), 'administrador'::app_role) OR auth.uid() = user_id);
 
-CREATE POLICY "Admin remove perfis" ON public.profiles
+CREATE POLICY "profiles_delete" ON public.profiles
   FOR DELETE TO authenticated
   USING (private.has_role(auth.uid(), 'administrador'::app_role));
 
 
 -- user_roles: usuária vê os próprios papéis; admin gerencia tudo
-CREATE POLICY "Usuário vê os próprios papéis" ON public.user_roles
+CREATE POLICY "user_roles_select" ON public.user_roles
   FOR SELECT TO authenticated
   USING (auth.uid() = user_id OR private.has_role(auth.uid(), 'administrador'::app_role));
 
-CREATE POLICY "Admin gerencia papéis" ON public.user_roles
+CREATE POLICY "user_roles_admin_all" ON public.user_roles
   FOR ALL TO authenticated
   USING (private.has_role(auth.uid(), 'administrador'::app_role))
   WITH CHECK (private.has_role(auth.uid(), 'administrador'::app_role));
 
 
 -- estoque: revendedora vê o próprio; admin gerencia tudo
-CREATE POLICY "Usuário vê o próprio estoque" ON public.estoque
+CREATE POLICY "estoque_select" ON public.estoque
   FOR SELECT TO authenticated
   USING (user_id = auth.uid() OR private.has_role(auth.uid(), 'administrador'::app_role));
 
-CREATE POLICY "Admin gerencia estoque" ON public.estoque
+CREATE POLICY "estoque_admin_all" ON public.estoque
   FOR ALL TO authenticated
   USING (private.has_role(auth.uid(), 'administrador'::app_role))
   WITH CHECK (private.has_role(auth.uid(), 'administrador'::app_role));
 
 
 -- estoque_geral: somente admin
-CREATE POLICY "Admin gerencia estoque geral" ON public.estoque_geral
+CREATE POLICY "estoque_geral_admin_all" ON public.estoque_geral
   FOR ALL TO authenticated
   USING (private.has_role(auth.uid(), 'administrador'::app_role))
   WITH CHECK (private.has_role(auth.uid(), 'administrador'::app_role));
 
 
 -- ciclos_mostruario: revendedora vê os próprios; admin gerencia tudo
-CREATE POLICY "Usuário vê os próprios ciclos" ON public.ciclos_mostruario
+CREATE POLICY "ciclos_select" ON public.ciclos_mostruario
   FOR SELECT TO authenticated
   USING (user_id = auth.uid() OR private.has_role(auth.uid(), 'administrador'::app_role));
 
-CREATE POLICY "Admin gerencia ciclos" ON public.ciclos_mostruario
+CREATE POLICY "ciclos_admin_all" ON public.ciclos_mostruario
   FOR ALL TO authenticated
   USING (private.has_role(auth.uid(), 'administrador'::app_role))
   WITH CHECK (private.has_role(auth.uid(), 'administrador'::app_role));
 
 
--- clientes: revendedora vê/edita os próprios; admin gerencia tudo
+-- clientes: inserção por qualquer autenticada; leitura/edição pelo dono ou admin
 CREATE POLICY "clientes_acesso" ON public.clientes
   FOR ALL TO authenticated
   USING (user_id = auth.uid() OR private.has_role(auth.uid(), 'administrador'::app_role))
   WITH CHECK (user_id = auth.uid() OR private.has_role(auth.uid(), 'administrador'::app_role));
 
--- Inserção: qualquer autenticada pode cadastrar cliente
 CREATE POLICY "clientes_auth_insert" ON public.clientes
   FOR INSERT TO authenticated
   WITH CHECK (
@@ -640,7 +738,6 @@ CREATE POLICY "clientes_auth_insert" ON public.clientes
     OR auth.uid() IS NOT NULL
   );
 
--- Select: vê clientes vinculados às suas vendas (ou admin)
 CREATE POLICY "clientes_dono_ou_admin_select" ON public.clientes
   FOR SELECT TO authenticated
   USING (
@@ -652,7 +749,6 @@ CREATE POLICY "clientes_dono_ou_admin_select" ON public.clientes
     )
   );
 
--- Update: revendedora só atualiza clientes das suas próprias vendas
 CREATE POLICY "clientes_dono_ou_admin_update" ON public.clientes
   FOR UPDATE TO authenticated
   USING (
@@ -674,35 +770,15 @@ CREATE POLICY "clientes_dono_ou_admin_update" ON public.clientes
 
 
 -- vendas: revendedora vê/insere as próprias; admin gerencia tudo
-CREATE POLICY "Usuário vê as próprias vendas" ON public.vendas
+CREATE POLICY "vendas_select" ON public.vendas
   FOR SELECT TO authenticated
   USING (user_id = auth.uid() OR private.has_role(auth.uid(), 'administrador'::app_role));
 
-CREATE POLICY "Usuário registra própria venda" ON public.vendas
+CREATE POLICY "vendas_insert" ON public.vendas
   FOR INSERT TO authenticated
   WITH CHECK (user_id = auth.uid() OR private.has_role(auth.uid(), 'administrador'::app_role));
 
-CREATE POLICY "Admins gerenciam vendas" ON public.vendas
+CREATE POLICY "vendas_admin_all" ON public.vendas
   FOR ALL TO authenticated
   USING (private.has_role(auth.uid(), 'administrador'::app_role))
   WITH CHECK (private.has_role(auth.uid(), 'administrador'::app_role));
-
-
--- =============================================================
--- PARTE 7 — STORAGE (bucket de certificados PDF)
--- =============================================================
-
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('certificados', 'certificados', true)
-ON CONFLICT (id) DO NOTHING;
-
-CREATE POLICY "certificados_leitura_publica" ON storage.objects
-  FOR SELECT USING (bucket_id = 'certificados');
-
-CREATE POLICY "certificados_upload_autenticado" ON storage.objects
-  FOR INSERT TO authenticated
-  WITH CHECK (bucket_id = 'certificados');
-
-CREATE POLICY "certificados_update_autenticado" ON storage.objects
-  FOR UPDATE TO authenticated
-  USING (bucket_id = 'certificados');
