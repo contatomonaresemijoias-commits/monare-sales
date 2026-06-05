@@ -28,7 +28,7 @@ import {
   formatDateBR,
 } from '@/lib/monare';
 
-type Usuario = { user_id: string; display_name: string | null; erp_id?: string | null };
+type Usuario = { user_id: string; display_name: string | null };
 type Produto = { id: string; sku: string; nome: string; ativo: boolean; preco_venda: number };
 type EstoqueItem = {
   id: string;
@@ -88,7 +88,7 @@ export default function Mostruario() {
   useEffect(() => {
     (async () => {
       const [{ data: us }, { data: pr }] = await Promise.all([
-        supabase.from('profiles').select('user_id, display_name, erp_id, ativo').order('display_name'),
+        supabase.from('profiles').select('user_id, display_name, ativo').order('display_name'),
         supabase.from('produtos').select('*').eq('ativo', true).order('sku'),
       ]);
       const ativos = ((us ?? []) as any[]).filter((u) => u.ativo !== false);
@@ -188,8 +188,9 @@ export default function Mostruario() {
   }
 
   // Parse rows from a spreadsheet/CSV file using SheetJS.
-  // Returns [{erp_id?, sku, qty}] after normalising headers and skipping blank rows.
-  function parseImportRows(data: unknown[][]): { erp_id: string | null; sku: string; qty: number }[] {
+  // Returns [{sku, qty}] after normalising headers and skipping blank rows.
+  // Expected format: sku | qty
+  function parseImportRows(data: unknown[][]): { sku: string; qty: number }[] {
     if (!data.length) return [];
 
     // Detect whether the first row is a header (contains non-numeric text in first cell)
@@ -197,24 +198,16 @@ export default function Mostruario() {
     const isHeader = isNaN(Number(firstCell)) && !/^[A-Z]{2,}[-_]?\d+$/.test(firstCell);
     const rows = isHeader ? data.slice(1) : data;
 
-    const result: { erp_id: string | null; sku: string; qty: number }[] = [];
+    const result: { sku: string; qty: number }[] = [];
 
     for (const row of rows) {
       const cells = row.map((c) => String(c ?? '').trim());
       if (!cells.some(Boolean)) continue; // skip blank rows
+      if (cells.length < 2) continue;
 
-      if (cells.length >= 3) {
-        // Format: erp_id | sku | qty
-        const erp_id = cells[0] || null;
-        const sku    = cells[1].toUpperCase();
-        const qty    = parseInt(cells[2]) || 0;
-        if (sku && qty > 0) result.push({ erp_id, sku, qty });
-      } else if (cells.length === 2) {
-        // Format: sku | qty
-        const sku = cells[0].toUpperCase();
-        const qty = parseInt(cells[1]) || 0;
-        if (sku && qty > 0) result.push({ erp_id: null, sku, qty });
-      }
+      const sku = cells[0].toUpperCase();
+      const qty = parseInt(cells[1]) || 0;
+      if (sku && qty > 0) result.push({ sku, qty });
     }
     return result;
   }
@@ -236,41 +229,22 @@ export default function Mostruario() {
         return;
       }
 
-      // Build erp_id → user_id map from loaded usuarios
-      const erpMap = new Map<string, string>();
-      for (const u of usuarios) {
-        if (u.erp_id) erpMap.set(u.erp_id.trim(), u.user_id);
+      if (!selectedUserId) {
+        toast({ title: 'Selecione uma revendedora antes de importar', variant: 'destructive' });
+        return;
       }
 
       const errors: string[] = [];
       let adicionados = 0;
 
-      for (const { erp_id, sku, qty } of rows) {
-        // Resolve target user
-        let targetUserId: string | null = null;
-        if (erp_id) {
-          targetUserId = erpMap.get(erp_id) ?? null;
-          if (!targetUserId) {
-            errors.push(`ERP "${erp_id}" não encontrado — linha com SKU ${sku} ignorada`);
-            continue;
-          }
-        } else {
-          if (!selectedUserId) {
-            errors.push(`SKU ${sku}: sem revendedora selecionada e sem ERP ID na linha`);
-            continue;
-          }
-          targetUserId = selectedUserId;
-        }
-
+      for (const { sku, qty } of rows) {
         const prod = produtos.find((p) => p.sku.toUpperCase() === sku);
         if (!prod) {
           errors.push(`SKU "${sku}" não cadastrado — linha ignorada`);
           continue;
         }
 
-        // Use estoque only when targetUserId === selectedUserId (already loaded)
-        const estoqueAtual = targetUserId === selectedUserId ? estoque : null;
-        const existing = estoqueAtual?.find((it) => it.produto_id === prod.id);
+        const existing = estoque.find((it) => it.produto_id === prod.id);
 
         if (existing) {
           await supabase
@@ -280,7 +254,7 @@ export default function Mostruario() {
         } else {
           await supabase
             .from('estoque')
-            .insert({ user_id: targetUserId, produto_id: prod.id, quantidade: qty });
+            .insert({ user_id: selectedUserId, produto_id: prod.id, quantidade: qty });
         }
         adicionados++;
       }
@@ -481,9 +455,6 @@ export default function Mostruario() {
               }`}
             >
               <span>{u.display_name ?? u.user_id}</span>
-              {u.erp_id && (
-                <span className="ml-1.5 text-[10px] opacity-60 font-mono">#{u.erp_id}</span>
-              )}
             </button>
           ))}
         </aside>
