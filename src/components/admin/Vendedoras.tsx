@@ -11,7 +11,6 @@ type VendedoraRow = {
   display_name: string | null;
   email: string | null;
   telefone: string | null;
-  erp_id: string | null;
   ativo: boolean;
   roles: string[];
 };
@@ -48,11 +47,6 @@ export default function Vendedoras() {
   const [editandoTel, setEditandoTel] = useState(false);
   const [novoTel, setNovoTel] = useState('');
   const [salvandoTel, setSalvandoTel] = useState(false);
-
-  // Edição de ERP ID
-  const [editandoErp, setEditandoErp] = useState(false);
-  const [novoErp, setNovoErp] = useState('');
-  const [salvandoErp, setSalvandoErp] = useState(false);
 
   // Reset de senha
   const [resetandoSenha, setResetandoSenha] = useState(false);
@@ -110,23 +104,6 @@ export default function Vendedoras() {
     }
   }
 
-  async function salvarErpId() {
-    if (!selectedUser) return;
-    setSalvandoErp(true);
-    const { data, error } = await supabase.functions.invoke('admin-manage-users', {
-      body: { action: 'update_erp_id', user_id: selectedUser.user_id, erp_id: novoErp.trim() || null },
-    });
-    setSalvandoErp(false);
-    if (error || data?.error) {
-      toast({ title: 'Erro ao salvar código ERP', description: error?.message || data?.error, variant: 'destructive' });
-    } else {
-      const erp = novoErp.trim() || null;
-      setSelectedUser((prev) => prev ? { ...prev, erp_id: erp } : prev);
-      setEditandoErp(false);
-      toast({ title: 'Código ERP atualizado' });
-    }
-  }
-
   async function salvarSenha() {
     if (!selectedUser) return;
     if (novaSenha.length < 6) {
@@ -167,8 +144,6 @@ export default function Vendedoras() {
     setSelectedUser(u);
     setEditandoTel(false);
     setNovoTel(u.telefone ?? '');
-    setEditandoErp(false);
-    setNovoErp(u.erp_id ?? '');
     setResetandoSenha(false);
     setNovaSenha('');
     setLoadingDetalhe(true);
@@ -365,37 +340,6 @@ export default function Vendedoras() {
                       {salvandoTel ? <Loader2 size={12} className="animate-spin" /> : 'Salvar'}
                     </Button>
                     <button onClick={() => setEditandoTel(false)} className="text-xs text-ink-soft hover:text-ink">
-                      <X size={14} />
-                    </button>
-                  </div>
-                )}
-
-                {/* ERP ID editável */}
-                {!editandoErp ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-ink-soft uppercase tracking-wider">ERP:</span>
-                    <span className="text-sm text-ink font-mono">
-                      {selectedUser.erp_id || <span className="text-ink-soft italic font-sans">não definido</span>}
-                    </span>
-                    <button
-                      onClick={() => { setEditandoErp(true); setNovoErp(selectedUser.erp_id ?? ''); }}
-                      className="text-[10px] text-ink-soft underline underline-offset-2 hover:text-rosa transition-colors"
-                    >
-                      {selectedUser.erp_id ? 'alterar' : 'definir'}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={novoErp}
-                      onChange={(e) => setNovoErp(e.target.value)}
-                      placeholder="Ex: 001"
-                      className="h-8 text-sm w-32 font-mono"
-                    />
-                    <Button size="sm" className="h-8 text-xs" disabled={salvandoErp} onClick={salvarErpId}>
-                      {salvandoErp ? <Loader2 size={12} className="animate-spin" /> : 'Salvar'}
-                    </Button>
-                    <button onClick={() => setEditandoErp(false)} className="text-xs text-ink-soft hover:text-ink">
                       <X size={14} />
                     </button>
                   </div>

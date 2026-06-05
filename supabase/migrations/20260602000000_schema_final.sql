@@ -56,7 +56,6 @@ CREATE TABLE public.profiles (
   user_id      UUID        NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
   display_name TEXT,
   telefone     TEXT,
-  erp_id       TEXT,
   ativo        BOOLEAN     NOT NULL DEFAULT true,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -65,7 +64,6 @@ CREATE TABLE public.profiles (
 );
 
 CREATE INDEX        idx_profiles_user_id    ON public.profiles(user_id);
-CREATE UNIQUE INDEX profiles_erp_id_unique  ON public.profiles(erp_id) WHERE erp_id IS NOT NULL;
 
 
 -- Papéis das usuárias

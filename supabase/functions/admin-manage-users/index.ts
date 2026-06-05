@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
     // ACTION: create
     // ---------------------------------------------------------------
     if (action === 'create') {
-      const { email, password, display_name, role, erp_id } = body;
+      const { email, password, display_name, role } = body;
 
       if (!email || !password) {
         return new Response(JSON.stringify({ error: 'E-mail e senha obrigatórios' }), {
@@ -91,8 +91,6 @@ Deno.serve(async (req) => {
         });
       }
 
-      const safeErpId = typeof erp_id === 'string' ? erp_id.trim().slice(0, 50) || null : null;
-
       const allowedRoles = ['revendedora', 'b2b'] as const;
       const assignedRole = allowedRoles.includes(role) ? role : 'revendedora';
 
@@ -106,7 +104,7 @@ Deno.serve(async (req) => {
 
       const newId = created.user.id;
       await admin.from('profiles').upsert(
-        { user_id: newId, display_name: safeName, erp_id: safeErpId },
+        { user_id: newId, display_name: safeName },
         { onConflict: 'user_id' },
       );
       await admin.from('user_roles').insert({ user_id: newId, role: assignedRole });
@@ -158,7 +156,7 @@ Deno.serve(async (req) => {
     if (action === 'list') {
       const { data: profiles } = await admin
         .from('profiles')
-        .select('id, user_id, display_name, erp_id, ativo, created_at')
+        .select('id, user_id, display_name, ativo, created_at')
         .order('created_at', { ascending: false });
 
       const { data: rolesAll } = await admin.from('user_roles').select('user_id, role');
@@ -176,7 +174,6 @@ Deno.serve(async (req) => {
         id: p.id,
         user_id: p.user_id,
         display_name: p.display_name,
-        erp_id: (p as any).erp_id ?? null,
         ativo: (p as any).ativo ?? true,
         created_at: p.created_at,
         email: emailMap.get(p.user_id) ?? null,
@@ -251,28 +248,6 @@ Deno.serve(async (req) => {
         .update({ ativo } as any)
         .eq('user_id', user_id);
       if (tErr) throw tErr;
-
-      return new Response(JSON.stringify({ ok: true }), {
-        headers: { ...headers, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // ---------------------------------------------------------------
-    // ACTION: update_erp_id
-    // ---------------------------------------------------------------
-    if (action === 'update_erp_id') {
-      const { user_id, erp_id } = body;
-      if (!user_id || typeof user_id !== 'string') {
-        return new Response(JSON.stringify({ error: 'user_id obrigatório' }), {
-          status: 400, headers: { ...headers, 'Content-Type': 'application/json' },
-        });
-      }
-      const safeErpId = typeof erp_id === 'string' ? erp_id.trim().slice(0, 50) || null : null;
-      const { error: eErr } = await admin
-        .from('profiles')
-        .update({ erp_id: safeErpId } as any)
-        .eq('user_id', user_id);
-      if (eErr) throw eErr;
 
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...headers, 'Content-Type': 'application/json' },
