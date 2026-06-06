@@ -596,9 +596,9 @@ export default function Mostruario() {
                 {filtered.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center gap-3 p-3 rounded-xl border border-border hover:border-rosa/40 transition-colors"
+                    className="flex flex-wrap items-center gap-2 sm:gap-3 p-3 rounded-xl border border-border hover:border-rosa/40 transition-colors"
                   >
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-[40%]">
                       <p className="font-mono text-xs text-rosa font-bold">{item.produto.sku}</p>
                       <p className="text-sm text-ink truncate">{item.produto.nome}</p>
                     </div>
@@ -643,7 +643,7 @@ export default function Mostruario() {
                     <Button
                       type="button"
                       size="sm"
-                      className="h-8 bg-rosa hover:bg-rosa/90 text-white text-xs"
+                      className="h-8 flex-1 sm:flex-none bg-rosa hover:bg-rosa/90 text-white text-xs"
                       disabled={item.quantidade <= 0}
                       onClick={() => abrirModalVenda(item)}
                     >

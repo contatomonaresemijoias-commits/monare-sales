@@ -435,8 +435,8 @@ export default function Vendas() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto -mx-5 px-5">
+          <table className="w-full min-w-[680px] text-sm">
             <thead>
               <tr className="text-left text-[10px] uppercase tracking-wider text-ink-soft border-b border-border">
                 <th className="py-2 pr-2">Data</th>

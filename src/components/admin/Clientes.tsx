@@ -155,8 +155,8 @@ export default function Clientes() {
           {search ? 'Nenhum cliente encontrado.' : 'Nenhum cliente cadastrado ainda.'}
         </div>
       ) : (
-        <div className="bg-white/80 border border-bege rounded overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-white/80 border border-bege rounded overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-bege text-[10px] tracking-[0.2em] uppercase text-ink-soft">
                 <th className="text-left px-4 py-3">Cliente</th>

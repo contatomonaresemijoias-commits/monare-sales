@@ -418,7 +418,7 @@ export function SaleRegistrationForm({ externalSku, onSkuConsumed }: Props) {
   if (step === "summary") {
     return (
       <div className="w-full">
-        <div className="bg-white/90 backdrop-blur border border-[#E8E2DA] rounded-sm shadow-sm p-8 space-y-6">
+        <div className="bg-white/90 backdrop-blur border border-[#E8E2DA] rounded-sm shadow-sm p-6 sm:p-8 space-y-6">
           <div>
             <p className="text-[10px] tracking-[0.35em] text-[#9B8E7E] uppercase mb-4">
               Confirme os dados da venda
@@ -512,7 +512,7 @@ export function SaleRegistrationForm({ externalSku, onSkuConsumed }: Props) {
   return (
     <div className="w-full">
       <div>
-        <div className="bg-white/90 backdrop-blur border border-[#E8E2DA] rounded-sm shadow-sm p-8 space-y-6">
+        <div className="bg-white/90 backdrop-blur border border-[#E8E2DA] rounded-sm shadow-sm p-6 sm:p-8 space-y-6">
 
           {/* Campo SKU + botão Adicionar */}
           <div className="space-y-1.5">
