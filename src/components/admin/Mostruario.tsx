@@ -46,6 +46,20 @@ type VendaSucesso = {
   validade_garantia: string;
 };
 
+// Linha parseada de uma planilha/CSV de importação
+type ImportRow = { sku: string; qty: number; nome: string; preco: number };
+// Item já casado com um produto existente (será somado ao estoque)
+type PreviewExistente = { sku: string; nome: string; qty: number; produto_id: string };
+// Item novo (SKU sem produto) que será criado automaticamente
+type PreviewNovo = { sku: string; nome: string; preco: number; qty: number };
+// Item descartado, com o motivo
+type PreviewIgnorado = { sku: string; motivo: string };
+type ImportPreview = {
+  existentes: PreviewExistente[];
+  novos: PreviewNovo[];
+  ignorados: PreviewIgnorado[];
+};
+
 export default function Mostruario() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -60,6 +74,10 @@ export default function Mostruario() {
   const [addQty, setAddQty] = useState(1);
   const [adding, setAdding] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Importação com pré-visualização
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [importing, setImporting] = useState(false);
 
   // Entregar Maleta
   const [confirmarEntrega, setConfirmarEntrega] = useState(false);
@@ -187,34 +205,113 @@ export default function Mostruario() {
     if (selectedUserId) loadEstoque(selectedUserId);
   }
 
-  // Parse rows from a spreadsheet/CSV file using SheetJS.
-  // Returns [{sku, qty}] after normalising headers and skipping blank rows.
-  // Expected format: sku | qty
-  function parseImportRows(data: unknown[][]): { sku: string; qty: number }[] {
+  // Normaliza texto para comparação de cabeçalhos: minúsculo, sem acento, trim.
+  function normalizeHeader(s: string): string {
+    return s
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .trim()
+      .toLowerCase();
+  }
+
+  // Converte número no formato PT-BR. Aceita number direto (SheetJS no .xls) ou
+  // strings como "1,00" / "4.181,18". Retorna NaN se não for um número válido.
+  function parseBrNumber(v: unknown): number {
+    if (typeof v === 'number') return v;
+    const s = String(v ?? '').trim();
+    if (!s) return NaN;
+    // Remove separador de milhar (.) e troca a vírgula decimal por ponto.
+    const normalized = s.replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
+    return normalized ? Number(normalized) : NaN;
+  }
+
+  // Parse das linhas de uma planilha/CSV usando SheetJS.
+  // Detecta colunas pelo cabeçalho (Código/Produto/Quantidade/Valor unitário); se não
+  // houver cabeçalho reconhecível, usa posicional col0=sku, col1=qty (compatibilidade).
+  // Agrega SKUs duplicados (soma de qty) e ignora a linha de "Totais".
+  function parseImportRows(data: unknown[][]): ImportRow[] {
     if (!data.length) return [];
 
-    // Detect whether the first row is a header (contains non-numeric text in first cell)
-    const firstCell = String(data[0][0] ?? '').trim().toUpperCase();
-    const isHeader = isNaN(Number(firstCell)) && !/^[A-Z]{2,}[-_]?\d+$/.test(firstCell);
-    const rows = isHeader ? data.slice(1) : data;
+    const headerCells = (data[0] ?? []).map((c) => normalizeHeader(String(c ?? '')));
+    const findCol = (...keys: string[]) =>
+      headerCells.findIndex((h) => keys.some((k) => h === k || h.includes(k)));
 
-    const result: { sku: string; qty: number }[] = [];
+    const skuCol = findCol('codigo', 'sku');
+    const nomeCol = findCol('produto', 'nome', 'descricao');
+    const qtyCol = findCol('quantidade', 'qtd', 'qty');
+    const precoCol = findCol('valor unitario', 'preco', 'valor unit');
+
+    const hasHeader = skuCol !== -1 || qtyCol !== -1;
+    const idx = {
+      sku: skuCol !== -1 ? skuCol : 0,
+      nome: nomeCol !== -1 ? nomeCol : -1,
+      qty: qtyCol !== -1 ? qtyCol : 1,
+      preco: precoCol,
+    };
+
+    const rows = hasHeader ? data.slice(1) : data;
+    const map = new Map<string, ImportRow>();
 
     for (const row of rows) {
-      const cells = row.map((c) => String(c ?? '').trim());
-      if (!cells.some(Boolean)) continue; // skip blank rows
-      if (cells.length < 2) continue;
+      const cell = (i: number) => (i >= 0 ? String(row[i] ?? '').trim() : '');
+      const sku = cell(idx.sku).toUpperCase();
+      // Pula linhas em branco e a linha de resumo "Totais (N Itens)" / "Total".
+      if (!sku || /^tota(l|is)/i.test(sku)) continue;
 
-      const sku = cells[0].toUpperCase();
-      const qty = parseInt(cells[1]) || 0;
-      if (sku && qty > 0) result.push({ sku, qty });
+      const qty = Math.trunc(parseBrNumber(idx.qty >= 0 ? row[idx.qty] : 0)) || 0;
+      if (qty <= 0) continue;
+
+      const nome = cell(idx.nome);
+      const preco = idx.preco >= 0 ? parseBrNumber(row[idx.preco]) : NaN;
+
+      const existing = map.get(sku);
+      if (existing) {
+        existing.qty += qty;
+      } else {
+        map.set(sku, { sku, qty, nome, preco: isNaN(preco) ? 0 : preco });
+      }
     }
-    return result;
+
+    return [...map.values()];
+  }
+
+  // Classifica as linhas parseadas contra o catálogo em memória.
+  function buildPreview(rows: ImportRow[]): ImportPreview {
+    const existentes: PreviewExistente[] = [];
+    const novos: PreviewNovo[] = [];
+    const ignorados: PreviewIgnorado[] = [];
+
+    for (const { sku, qty, nome, preco } of rows) {
+      const prod = produtos.find((p) => p.sku.toUpperCase() === sku);
+      if (prod) {
+        existentes.push({ sku: prod.sku, nome: prod.nome, qty, produto_id: prod.id });
+        continue;
+      }
+      // SKU novo: precisa de nome (2-200) e preço > 0 para ser criado ativo.
+      if (sku.length < 2 || sku.length > 30) {
+        ignorados.push({ sku, motivo: 'SKU fora do limite de 2 a 30 caracteres' });
+      } else if (nome.trim().length < 2) {
+        ignorados.push({ sku, motivo: 'Sem nome de produto no arquivo' });
+      } else if (!(preco > 0)) {
+        ignorados.push({ sku, motivo: 'Sem preço válido no arquivo' });
+      } else {
+        novos.push({ sku, nome: nome.trim().slice(0, 200), preco, qty });
+      }
+    }
+
+    return { existentes, novos, ignorados };
   }
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (!selectedUserId) {
+      toast({ title: 'Selecione uma revendedora antes de importar', variant: 'destructive' });
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     setAdding(true);
 
     try {
@@ -229,51 +326,97 @@ export default function Mostruario() {
         return;
       }
 
-      if (!selectedUserId) {
-        toast({ title: 'Selecione uma revendedora antes de importar', variant: 'destructive' });
-        return;
+      // Em vez de gravar direto, calcula o que vai acontecer e abre a pré-visualização.
+      setImportPreview(buildPreview(rows));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast({ title: 'Erro ao importar arquivo', description: msg, variant: 'destructive' });
+    } finally {
+      setAdding(false);
+      // Reseta o input para permitir reimportar o mesmo arquivo depois.
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  // Aplica a importação após o usuário confirmar no modal: cria os produtos novos
+  // e lança as quantidades no estoque da revendedora.
+  async function confirmImport() {
+    if (!importPreview || !selectedUserId) return;
+    setImporting(true);
+
+    try {
+      const { existentes, novos } = importPreview;
+
+      // 1) Cria os produtos novos em lote (ativos, com o preço do arquivo).
+      let criados: Produto[] = [];
+      if (novos.length) {
+        const { data, error } = await supabase
+          .from('produtos')
+          .insert(
+            novos.map((n) => ({
+              sku: n.sku,
+              nome: n.nome,
+              preco_venda: n.preco,
+              ativo: true,
+            })),
+          )
+          .select('id, sku, nome, ativo, preco_venda');
+
+        if (error) {
+          toast({ title: 'Erro ao criar produtos', description: error.message, variant: 'destructive' });
+          setImporting(false);
+          return;
+        }
+        criados = (data ?? []) as Produto[];
+        // Mantém o catálogo em memória consistente para a tela.
+        setProdutos((ps) => [...ps, ...criados]);
       }
 
-      const errors: string[] = [];
-      let adicionados = 0;
+      // 2) Mapa sku -> produto_id juntando catálogo existente + recém-criados.
+      const idPorSku = new Map<string, string>();
+      for (const p of produtos) idPorSku.set(p.sku.toUpperCase(), p.id);
+      for (const p of criados) idPorSku.set(p.sku.toUpperCase(), p.id);
 
-      for (const { sku, qty } of rows) {
-        const prod = produtos.find((p) => p.sku.toUpperCase() === sku);
-        if (!prod) {
-          errors.push(`SKU "${sku}" não cadastrado — linha ignorada`);
-          continue;
-        }
+      // 3) Lança no estoque (soma quando já existe, insere quando novo).
+      const alvos = [
+        ...existentes.map((it) => ({ produto_id: it.produto_id, qty: it.qty })),
+        ...novos
+          .map((it) => ({ produto_id: idPorSku.get(it.sku.toUpperCase()), qty: it.qty }))
+          .filter((it): it is { produto_id: string; qty: number } => !!it.produto_id),
+      ];
 
-        const existing = estoque.find((it) => it.produto_id === prod.id);
-
-        if (existing) {
-          await supabase
-            .from('estoque')
-            .update({ quantidade: existing.quantidade + qty })
-            .eq('id', existing.id);
-        } else {
-          await supabase
-            .from('estoque')
-            .insert({ user_id: selectedUserId, produto_id: prod.id, quantidade: qty });
-        }
-        adicionados++;
+      let erros = 0;
+      for (const { produto_id, qty } of alvos) {
+        const existing = estoque.find((it) => it.produto_id === produto_id);
+        const { error } = existing
+          ? await supabase
+              .from('estoque')
+              .update({ quantidade: existing.quantidade + qty })
+              .eq('id', existing.id)
+          : await supabase
+              .from('estoque')
+              .insert({ user_id: selectedUserId, produto_id, quantidade: qty });
+        if (error) erros++;
       }
 
-      const descParts = [`${adicionados} SKU(s) processado(s).`];
-      if (errors.length) descParts.push(`${errors.length} ignorado(s): ${errors.slice(0, 3).join('; ')}${errors.length > 3 ? '…' : ''}`);
+      const partes = [];
+      if (criados.length) partes.push(`${criados.length} produto(s) criado(s)`);
+      partes.push(`${alvos.length - erros} item(ns) no estoque`);
+      if (erros) partes.push(`${erros} com erro`);
 
       toast({
         title: 'Importação concluída',
-        description: descParts.join(' '),
-        variant: errors.length ? 'destructive' : 'default',
+        description: partes.join(' · ') + '.',
+        variant: erros ? 'destructive' : 'default',
       });
 
-      if (selectedUserId) await loadEstoque(selectedUserId);
-    } catch (err: any) {
-      toast({ title: 'Erro ao importar arquivo', description: err.message, variant: 'destructive' });
+      await loadEstoque(selectedUserId);
+      setImportPreview(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast({ title: 'Erro ao importar', description: msg, variant: 'destructive' });
     } finally {
-      setAdding(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setImporting(false);
     }
   }
 
@@ -665,6 +808,139 @@ export default function Mostruario() {
           )}
         </section>
       </div>
+
+      {/* Modal: Pré-visualização da Importação */}
+      {importPreview && selectedUsuario && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => !importing && setImportPreview(null)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-6 pb-4 border-b border-bege">
+              <div>
+                <h3 className="font-serif text-xl text-ink">Pré-visualização da importação</h3>
+                <p className="text-xs text-ink-soft mt-0.5">
+                  {selectedUsuario.display_name ?? 'Revendedora'}
+                </p>
+              </div>
+              <button
+                onClick={() => !importing && setImportPreview(null)}
+                className="text-ink-soft hover:text-ink"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Resumo */}
+            <div className="flex flex-wrap gap-2 px-6 py-3 text-xs">
+              <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
+                {importPreview.novos.length} novo(s) a criar
+              </span>
+              <span className="px-3 py-1 rounded-full bg-bege-light text-ink-soft border border-bege font-medium">
+                {importPreview.existentes.length} já cadastrado(s)
+              </span>
+              {importPreview.ignorados.length > 0 && (
+                <span className="px-3 py-1 rounded-full bg-destructive/10 text-destructive border border-destructive/20 font-medium">
+                  {importPreview.ignorados.length} ignorado(s)
+                </span>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 pb-2 space-y-5">
+              {/* Novos produtos */}
+              {importPreview.novos.length > 0 && (
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-emerald-700 font-semibold mb-2 flex items-center gap-1.5">
+                    <Plus size={12} /> Novos produtos (serão criados)
+                  </p>
+                  <div className="space-y-1.5">
+                    {importPreview.novos.map((n) => (
+                      <div
+                        key={n.sku}
+                        className="flex items-center gap-2 p-2.5 rounded-lg bg-emerald-50/60 border border-emerald-200"
+                      >
+                        <span className="font-mono text-xs text-emerald-800 font-bold w-24 shrink-0">{n.sku}</span>
+                        <span className="text-sm text-ink flex-1 truncate">{n.nome}</span>
+                        <span className="text-xs text-ink-soft shrink-0">R$ {n.preco.toFixed(2)}</span>
+                        <span className="text-xs font-semibold text-ink shrink-0 w-12 text-right">×{n.qty}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Já cadastrados */}
+              {importPreview.existentes.length > 0 && (
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-ink-soft font-semibold mb-2">
+                    Já cadastrados (somar ao estoque)
+                  </p>
+                  <div className="space-y-1.5">
+                    {importPreview.existentes.map((it) => (
+                      <div
+                        key={it.sku}
+                        className="flex items-center gap-2 p-2.5 rounded-lg border border-border"
+                      >
+                        <span className="font-mono text-xs text-rosa font-bold w-24 shrink-0">{it.sku}</span>
+                        <span className="text-sm text-ink flex-1 truncate">{it.nome}</span>
+                        <span className="text-xs font-semibold text-ink shrink-0 w-12 text-right">×{it.qty}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Ignorados */}
+              {importPreview.ignorados.length > 0 && (
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-destructive font-semibold mb-2">
+                    Ignorados
+                  </p>
+                  <div className="space-y-1.5">
+                    {importPreview.ignorados.map((it) => (
+                      <div
+                        key={it.sku}
+                        className="flex items-center gap-2 p-2.5 rounded-lg bg-destructive/5 border border-destructive/20"
+                      >
+                        <span className="font-mono text-xs text-destructive font-bold w-24 shrink-0">{it.sku}</span>
+                        <span className="text-xs text-ink-soft flex-1">{it.motivo}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 p-6 pt-4 border-t border-bege">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => setImportPreview(null)}
+                disabled={importing}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 bg-rosa hover:bg-rosa/90 text-white"
+                onClick={confirmImport}
+                disabled={importing || (importPreview.novos.length === 0 && importPreview.existentes.length === 0)}
+              >
+                {importing ? (
+                  <Loader2 size={14} className="animate-spin mr-2" />
+                ) : (
+                  <FileSpreadsheet size={14} className="mr-2" />
+                )}
+                Confirmar importação
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Confirmar Entrega da Maleta */}
       {confirmarEntrega && selectedUsuario && (
