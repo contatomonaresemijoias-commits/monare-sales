@@ -7,10 +7,8 @@ import { useAuth } from '@/hooks/useAuth';
 export default function AuthPage() {
   const { user, loading, isAdmin } = useAuth();
   const nav = useNavigate();
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,20 +23,8 @@ export default function AuthPage() {
     setError(null);
     setBusy(true);
     try {
-      if (mode === 'signup') {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/`,
-            data: { display_name: name },
-          },
-        });
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-      }
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
     } catch (err: any) {
       const raw = err?.message ?? 'Erro ao autenticar';
       const map: Record<string, string> = {
@@ -72,25 +58,13 @@ export default function AuthPage() {
           </div>
           <h1 className="font-serif text-5xl tracking-[0.15em] font-light text-ink uppercase">Monarê</h1>
           <p className="text-ink-soft text-xs tracking-[0.25em] uppercase mt-2">
-            {mode === 'login' ? 'Entrar' : 'Criar Conta'}
+            Entrar
           </p>
         </div>
 
         <div className="bg-white rounded-3xl shadow-luxe overflow-hidden border border-white/60">
           <div className="h-1.5 w-full accent-bar" />
           <form onSubmit={submit} className="p-6 space-y-5">
-            {mode === 'signup' && (
-              <div>
-                <label className={labelBase}>Nome</label>
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Maria Silva"
-                  required
-                  className={inputBase}
-                />
-              </div>
-            )}
             <div>
               <label className={labelBase}>E-mail</label>
               <input
@@ -113,7 +87,7 @@ export default function AuthPage() {
                 required
                 minLength={6}
                 className={inputBase}
-                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                autoComplete="current-password"
               />
             </div>
 
@@ -127,22 +101,23 @@ export default function AuthPage() {
               className="w-full flex items-center justify-center gap-2.5 py-4 rounded-2xl bg-rosa-gradient text-white text-sm font-semibold tracking-[0.1em] uppercase shadow-rosa active:scale-[0.98] transition-all disabled:opacity-60"
             >
               {busy && <Loader2 size={16} className="animate-spin" />}
-              {mode === 'login' ? 'Entrar' : 'Criar Conta'}
+              Entrar
             </button>
 
-            {mode === 'login' && (
-              <p className="text-xs text-ink-soft text-center">
-                Esqueceu sua senha? Entre em contato com o administrador.
-              </p>
-            )}
+            <p className="text-xs text-ink-soft text-center">
+              Esqueceu sua senha? Entre em contato com o administrador.
+            </p>
 
-            <button
-              type="button"
-              onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
-              className="w-full text-center text-xs text-ink-soft hover:text-rosa transition-colors"
+            <a
+              href={`https://wa.me/5515996338541?text=${encodeURIComponent(
+                'Olá, tudo bom? Eu acessei o site de vocês Monarê e gostaria de me tornar uma revendedora de vocês.'
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block w-full text-center py-3 rounded-2xl border border-rosa text-rosa text-xs font-semibold hover:bg-rosa/5 transition-colors"
             >
-              {mode === 'login' ? 'Não tem conta? Cadastre-se' : 'Já tem conta? Entrar'}
-            </button>
+              Quer ser revendedora? Fale conosco pelo WhatsApp
+            </a>
           </form>
         </div>
       </div>
