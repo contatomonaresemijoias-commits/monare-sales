@@ -3,12 +3,18 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import SkuCombobox, { type ProdutoOption } from "@/components/SkuCombobox";
 import SuccessModal from "@/components/SuccessModal";
-import { formatWhatsApp } from "@/lib/monare";
+import { formatWhatsApp, getToday, getMinDate } from "@/lib/monare";
 import { gerarCertificadoPDF } from "@/lib/gerarCertificadoPDF";
 import { X } from "lucide-react";
 
-function gerarCodigoGarantia(index: number = 0): string {
-  return "MN-" + (Date.now() + index).toString(36).toUpperCase();
+// Código único por peça: timestamp em base36 + sufixo aleatório.
+// O sufixo evita colisão com o UNIQUE de vendas.codigo_garantia quando duas
+// revendedoras registram no mesmo milissegundo ou quando uma venda tem vários itens.
+function gerarCodigoGarantia(): string {
+  const aleatorio = Array.from({ length: 4 }, () =>
+    Math.floor(Math.random() * 36).toString(36),
+  ).join("");
+  return ("MN-" + Date.now().toString(36) + aleatorio).toUpperCase();
 }
 
 function gerarUUID(): string {
@@ -21,20 +27,11 @@ function gerarUUID(): string {
   });
 }
 
-function hojeISO(): string {
-  return new Date().toISOString().split("T")[0];
-}
-
-function minDataISO(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 3);
-  return d.toISOString().split("T")[0];
-}
-
+// Validade = data da venda + 1 ano, calculada sobre a string YYYY-MM-DD para
+// não escorregar de dia por causa de fuso.
 function validadeFromData(dataVenda: string): string {
-  const d = new Date(dataVenda + "T12:00:00");
-  d.setFullYear(d.getFullYear() + 1);
-  return d.toISOString().split("T")[0];
+  const [y, m, d] = dataVenda.split("-").map(Number);
+  return new Date(Date.UTC(y + 1, m - 1, d)).toISOString().split("T")[0];
 }
 
 function formatDataBR(iso: string): string {
@@ -63,7 +60,7 @@ type Props = {
 };
 
 const FORM_INICIAL: FormData = {
-  data_venda: hojeISO(),
+  data_venda: getToday(),
   cliente_nome: "",
   cliente_whatsapp: "",
   termo_aceito: false,
@@ -322,20 +319,27 @@ export function SaleRegistrationForm({ externalSku, onSkuConsumed }: Props) {
       // UUID público único por transação — compartilhado entre todos os itens
       const garantiaUUID = gerarUUID();
 
-      // Gera um código de garantia único por item e insere uma venda por produto
-      const vendaInserts = items.map((item, i) => ({
-        user_id: user.id,
-        produto_id: item.produto_id,
-        produto_nome: item.nome_produto,
-        cliente_nome: form.cliente_nome.trim(),
-        cliente_whatsapp: form.cliente_whatsapp.trim(),
-        valor_venda: item.preco_unitario,
-        data_venda: form.data_venda,
-        validade_garantia: validadeGarantia,
-        codigo_garantia: gerarCodigoGarantia(i),
-        termo_aceito: form.termo_aceito,
-        garantia_uuid: garantiaUUID,
-      }));
+      // Gera um código de garantia único por item e insere uma venda por produto.
+      // O código também é a chave que liga cada linha inserida de volta ao item
+      // local — não dependemos da ordem em que o Postgres devolve as linhas.
+      const itensPorCodigo = new Map<string, ItemVenda>();
+      const vendaInserts = items.map((item) => {
+        const codigo_garantia = gerarCodigoGarantia();
+        itensPorCodigo.set(codigo_garantia, item);
+        return {
+          user_id: user.id,
+          produto_id: item.produto_id,
+          produto_nome: item.nome_produto,
+          cliente_nome: form.cliente_nome.trim(),
+          cliente_whatsapp: form.cliente_whatsapp.trim(),
+          valor_venda: item.preco_unitario,
+          data_venda: form.data_venda,
+          validade_garantia: validadeGarantia,
+          codigo_garantia,
+          termo_aceito: form.termo_aceito,
+          garantia_uuid: garantiaUUID,
+        };
+      });
 
       const { data: inserted, error } = await supabase
         .from("vendas")
@@ -360,8 +364,9 @@ export function SaleRegistrationForm({ externalSku, onSkuConsumed }: Props) {
       const consultora_nome = profile?.display_name ?? "Consultora";
       const consultora_telefone = (profile as any)?.telefone ?? null;
       const pdfResults = await Promise.allSettled(
-        (inserted ?? []).map(async (row, i) => {
-          const item = items[i];
+        (inserted ?? []).map(async (row) => {
+          const item = itensPorCodigo.get(row.codigo_garantia);
+          if (!item) throw new Error(`Item não encontrado para ${row.codigo_garantia}`);
           const url = await gerarCertificadoPDF({
             venda_id: row.id,
             produto_nome: item.nome_produto,
@@ -383,13 +388,16 @@ export function SaleRegistrationForm({ externalSku, onSkuConsumed }: Props) {
       }
 
       // Monta dados de sucesso combinando items locais com códigos retornados
-      const successItems = (inserted ?? []).map((row, i) => ({
-        produto_nome: items[i].nome_produto,
-        sku: items[i].codigo_sku,
-        codigo_garantia: row.codigo_garantia,
-        validade_garantia: validadeGarantia,
-        pdf_garantia_url: pdfUrls[row.id] ?? null,
-      }));
+      const successItems = (inserted ?? []).map((row) => {
+        const item = itensPorCodigo.get(row.codigo_garantia);
+        return {
+          produto_nome: item?.nome_produto ?? row.produto_nome,
+          sku: item?.codigo_sku ?? "",
+          codigo_garantia: row.codigo_garantia,
+          validade_garantia: validadeGarantia,
+          pdf_garantia_url: pdfUrls[row.id] ?? null,
+        };
+      });
 
       setSuccessData({
         items: successItems,
@@ -406,7 +414,7 @@ export function SaleRegistrationForm({ externalSku, onSkuConsumed }: Props) {
       setItems([]);
       setCurrentSku("");
       setCurrentProduto(null);
-      setForm({ ...FORM_INICIAL, data_venda: hojeISO() });
+      setForm({ ...FORM_INICIAL, data_venda: getToday() });
     } catch (err: any) {
       console.error("[handleSubmit]", err);
       setSubmitStatus("error");
@@ -622,8 +630,8 @@ export function SaleRegistrationForm({ externalSku, onSkuConsumed }: Props) {
             <input
               type="date"
               value={form.data_venda}
-              min={minDataISO()}
-              max={hojeISO()}
+              min={getMinDate()}
+              max={getToday()}
               onChange={(e) => setForm((prev) => ({ ...prev, data_venda: e.target.value }))}
               className="w-full border-b border-[#D4CCBF] bg-transparent py-2.5 text-[#2C2825] text-sm tracking-wide focus:outline-none focus:border-[#C9A96E] transition-colors"
             />

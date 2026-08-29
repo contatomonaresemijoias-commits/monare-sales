@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2, TrendingUp, Wallet, ClipboardList, FileText } from 'lucide-react';
+import { Loader2, TrendingUp, Wallet, ClipboardList, FileText, CheckCircle2, Sparkles } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { formatDateBR, statusComissao, MINIMO_VENDAS_SAQUE } from '@/lib/monare';
 
 type Saldo = {
   ciclo_id: string;
@@ -19,25 +20,22 @@ type Venda = {
   valor_venda: number | null;
   comissao_valor: number | null;
   codigo_garantia: string;
-  garantia_uuid: string | null;
   produtos: { sku: string } | null;
 };
 
 const fmt = (n: number | null | undefined) =>
   (n ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-function GarantiaLink({ venda }: { venda: Venda }) {
-  const href = venda.garantia_uuid
-    ? `/garantia?venda=${venda.garantia_uuid}`
-    : `/garantia?codigo=${venda.codigo_garantia}`;
-
+// Cada linha do histórico é uma peça, então o link abre o certificado dela —
+// não o painel da venda inteira.
+function GarantiaLink({ codigo }: { codigo: string }) {
   return (
     <a
-      href={href}
+      href={`/garantia?codigo=${codigo}`}
       target="_blank"
       rel="noreferrer"
       className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-[#E8DDD0] text-[#C9607E] text-[10px] font-semibold uppercase tracking-wider hover:bg-[#FDF0F4] transition-colors"
-      title="Ver garantia"
+      title="Ver certificado desta peça"
     >
       <FileText size={11} />
       Cert.
@@ -63,7 +61,7 @@ export default function Dashboard() {
     if (cicloAtual?.ciclo_id) {
       const { data: vendasData } = await supabase
         .from('vendas')
-        .select('id, produto_nome, cliente_nome, data_venda, valor_venda, codigo_garantia, garantia_uuid, produtos(sku)')
+        .select('id, produto_nome, cliente_nome, data_venda, valor_venda, codigo_garantia, produtos(sku)')
         .eq('user_id', user.id)
         .eq('ciclo_id', cicloAtual.ciclo_id)
         .order('data_venda', { ascending: false })
@@ -110,6 +108,11 @@ export default function Dashboard() {
     ? ((saldo.total_comissao / saldo.total_vendas) * 100).toFixed(0)
     : null;
 
+  // A comissão aparece sempre, desde a primeira venda. O que o mínimo do ciclo
+  // decide é só se ela já pode ser sacada — por isso vira status, e não um
+  // valor escondido.
+  const saque = statusComissao(saldo?.total_vendas);
+
   return (
     <div className="w-full max-w-md space-y-4">
       {/* Resumo do ciclo */}
@@ -138,10 +141,34 @@ export default function Dashboard() {
             {pct !== null ? (
               <p className="text-[10px] text-[#9B8E7E] mt-0.5">{pct}% sobre vendido</p>
             ) : (
-              <p className="text-[10px] text-[#9B8E7E] mt-0.5">Mín. R$ 400 para comissão</p>
+              <p className="text-[10px] text-[#9B8E7E] mt-0.5">30% já na 1ª venda</p>
             )}
           </div>
         </div>
+
+        {/* Status do saque: sim ou não, com o quanto falta quando for não. */}
+        {saque.liberada ? (
+          <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+            <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+            <p className="text-[11px] text-emerald-800">
+              <span className="font-semibold">Comissão liberada para receber.</span>{' '}
+              Você já passou de {fmt(MINIMO_VENDAS_SAQUE)} vendidos neste ciclo.
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-start gap-2 rounded-xl border border-[#E8DDD0] bg-[#FAF6F0] px-3 py-2">
+            <Sparkles size={13} className="text-[#C9A96E] shrink-0 mt-0.5" />
+            <div>
+              <p className="text-[11px] text-[#6B6259]">
+                Grandes resultados começam com metas simples. A sua:{' '}
+                <span className="font-semibold text-[#2C2825]">R$ {MINIMO_VENDAS_SAQUE}</span>. Você consegue.
+              </p>
+              <p className="text-[10px] text-[#9B8E7E] mt-0.5">
+                Faltam {fmt(saque.faltam)} para liberar sua comissão.
+              </p>
+            </div>
+          </div>
+        )}
 
         {acertoDate && (
           <p className="text-[11px] text-[#9B8E7E] text-center border-t border-[#E8DDD0] pt-3">
@@ -172,7 +199,7 @@ export default function Dashboard() {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-[#2C2825] truncate">{v.produto_nome}</p>
                   <p className="text-[11px] text-[#9B8E7E] truncate">
-                    {v.cliente_nome} · {new Date(v.data_venda).toLocaleDateString('pt-BR')}
+                    {v.cliente_nome} · {formatDateBR(v.data_venda)}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -182,7 +209,7 @@ export default function Dashboard() {
                       <p className="text-[10px] text-[#C9607E]">{fmt(v.comissao_valor)} comissão</p>
                     )}
                   </div>
-                  <GarantiaLink venda={v} />
+                  <GarantiaLink codigo={v.codigo_garantia} />
                 </div>
               </div>
             ))}

@@ -14,6 +14,114 @@ export type Database = {
   }
   public: {
     Tables: {
+      candidatas_revenda: {
+        Row: {
+          avaliacao_manual: number | null
+          canal_principal: string | null
+          como_conheceu: string | null
+          como_conheceu_outra: string | null
+          cpf: string | null
+          contratada_em: string | null
+          created_at: string
+          data_nascimento: string | null
+          email: string | null
+          endereco_bairro: string | null
+          endereco_cep: string | null
+          endereco_cidade: string | null
+          endereco_complemento: string | null
+          endereco_estado: string | null
+          endereco_numero: string | null
+          endereco_rua: string | null
+          etapa_atual: number
+          experiencia_vendas: string | null
+          experiencia_vendas_detalhe: string | null
+          id: string
+          instagram_handle: string | null
+          lgpd_consent: boolean
+          modalidade_interesse: string | null
+          motivo_escolha: string | null
+          motivo_recusa: string | null
+          nome_completo: string | null
+          restricao_cpf: string | null
+          sonho_realizacao: string | null
+          status: Database["public"]["Enums"]["candidatura_status"]
+          trabalha_atualmente: string | null
+          updated_at: string
+          user_id: string | null
+          whatsapp: string | null
+        }
+        Insert: {
+          avaliacao_manual?: number | null
+          canal_principal?: string | null
+          como_conheceu?: string | null
+          como_conheceu_outra?: string | null
+          cpf?: string | null
+          contratada_em?: string | null
+          created_at?: string
+          data_nascimento?: string | null
+          email?: string | null
+          endereco_bairro?: string | null
+          endereco_cep?: string | null
+          endereco_cidade?: string | null
+          endereco_complemento?: string | null
+          endereco_estado?: string | null
+          endereco_numero?: string | null
+          endereco_rua?: string | null
+          etapa_atual?: number
+          experiencia_vendas?: string | null
+          experiencia_vendas_detalhe?: string | null
+          id?: string
+          instagram_handle?: string | null
+          lgpd_consent?: boolean
+          modalidade_interesse?: string | null
+          motivo_escolha?: string | null
+          motivo_recusa?: string | null
+          nome_completo?: string | null
+          restricao_cpf?: string | null
+          sonho_realizacao?: string | null
+          status?: Database["public"]["Enums"]["candidatura_status"]
+          trabalha_atualmente?: string | null
+          updated_at?: string
+          user_id?: string | null
+          whatsapp?: string | null
+        }
+        Update: {
+          avaliacao_manual?: number | null
+          canal_principal?: string | null
+          como_conheceu?: string | null
+          como_conheceu_outra?: string | null
+          cpf?: string | null
+          contratada_em?: string | null
+          created_at?: string
+          data_nascimento?: string | null
+          email?: string | null
+          endereco_bairro?: string | null
+          endereco_cep?: string | null
+          endereco_cidade?: string | null
+          endereco_complemento?: string | null
+          endereco_estado?: string | null
+          endereco_numero?: string | null
+          endereco_rua?: string | null
+          etapa_atual?: number
+          experiencia_vendas?: string | null
+          experiencia_vendas_detalhe?: string | null
+          id?: string
+          instagram_handle?: string | null
+          lgpd_consent?: boolean
+          modalidade_interesse?: string | null
+          motivo_escolha?: string | null
+          motivo_recusa?: string | null
+          nome_completo?: string | null
+          restricao_cpf?: string | null
+          sonho_realizacao?: string | null
+          status?: Database["public"]["Enums"]["candidatura_status"]
+          trabalha_atualmente?: string | null
+          updated_at?: string
+          user_id?: string | null
+          whatsapp?: string | null
+        }
+        Relationships: []
+      }
       ciclos_mostruario: {
         Row: {
           aberto_em: string
@@ -132,6 +240,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          ativo: boolean
           created_at: string
           display_name: string | null
           id: string
@@ -140,6 +249,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          ativo?: boolean
           created_at?: string
           display_name?: string | null
           id?: string
@@ -148,6 +258,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          ativo?: boolean
           created_at?: string
           display_name?: string | null
           id?: string
@@ -327,7 +438,13 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "administrador" | "revendedora" | "b2b"
+      app_role: "administrador" | "revendedora" | "b2b" | "rh"
+      candidatura_status:
+        | "CADASTRO_NAO_CONCLUIDO"
+        | "pendente"
+        | "aprovada"
+        | "recusada"
+        | "contratada"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -455,7 +572,14 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["administrador", "revendedora", "b2b"],
+      app_role: ["administrador", "revendedora", "b2b", "rh"],
+      candidatura_status: [
+        "CADASTRO_NAO_CONCLUIDO",
+        "pendente",
+        "aprovada",
+        "recusada",
+        "contratada",
+      ],
     },
   },
 } as const

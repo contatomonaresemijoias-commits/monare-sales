@@ -7,6 +7,7 @@ type Profile = {
   user_id: string;
   display_name: string | null;
   telefone: string | null;
+  ativo: boolean;
 };
 
 type AuthCtx = {
@@ -15,8 +16,11 @@ type AuthCtx = {
   profile: Profile | null;
   roles: string[];
   isAdmin: boolean;
+  isRh: boolean;
   isRevendedora: boolean;
   isB2B: boolean;
+  // false apenas quando o profile existe e está marcado como inativo.
+  isAtivo: boolean;
   loading: boolean;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -37,7 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Busca profile pelo user_id (= auth.uid)
     const { data: prof } = await supabase
       .from('profiles')
-      .select('id, user_id, display_name, telefone')
+      .select('id, user_id, display_name, telefone, ativo')
       .eq('user_id', uid)
       .maybeSingle();
 
@@ -113,8 +117,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profile,
         roles,
         isAdmin: roles.includes('administrador'),
+        isRh: roles.includes('rh'),
         isRevendedora: roles.includes('revendedora'),
         isB2B: roles.includes('b2b'),
+        isAtivo: profile?.ativo !== false,
         loading,
         signOut,
         refresh,

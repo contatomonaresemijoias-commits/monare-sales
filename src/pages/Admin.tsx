@@ -1,22 +1,30 @@
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Package, Boxes, UserCog, Receipt, Users, UserPlus } from 'lucide-react';
+import { ArrowLeft, Package, Boxes, UserCog, Receipt, Users } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Mostruario from '@/components/admin/Mostruario';
 import Produtos from '@/components/admin/Produtos';
 import Vendedoras from '@/components/admin/Vendedoras';
-import NovaUsuaria from '@/components/admin/NovaUsuaria';
 import Vendas from '@/components/admin/Vendas';
 import Clientes from '@/components/admin/Clientes';
+import { RH_PATH } from '@/lib/acesso';
+import { PAINEL_PATH } from '@/content/landing';
 
 const tabTriggerClass =
   'flex-col sm:flex-row gap-0.5 sm:gap-0 h-auto py-2 text-[11px] sm:text-sm data-[state=active]:bg-rosa data-[state=active]:text-white';
 
+/**
+ * Painel comercial: estoque, catálogo, vendas, clientes e comissão.
+ *
+ * Captação, contratação e ativação/inativação de contas moraram aqui até a
+ * separação por papel — agora vivem no /rh, com acesso também para quem é RH.
+ * A aba Revendedoras continua nesta tela, mas só com a visão operacional.
+ */
 export default function Admin() {
   return (
     <main className="min-h-screen bg-monare-gradient pb-12">
       <header className="px-4 sm:px-5 py-5 sm:py-6 max-w-5xl mx-auto flex items-center justify-between gap-3">
         <Link
-          to="/"
+          to={PAINEL_PATH}
           className="inline-flex items-center gap-2 text-ink-soft hover:text-rosa text-sm transition-colors shrink-0"
         >
           <ArrowLeft size={16} />
@@ -26,12 +34,19 @@ export default function Admin() {
           <h1 className="font-serif text-2xl sm:text-3xl tracking-[0.15em] text-ink uppercase">Monarê</h1>
           <p className="text-rosa text-[10px] tracking-[0.3em] uppercase font-medium">Administração</p>
         </div>
-        <div className="w-10 sm:w-16 shrink-0" />
+        <Link
+          to={RH_PATH}
+          className="inline-flex items-center gap-1.5 text-ink-soft hover:text-rosa text-xs transition-colors shrink-0"
+          title="Captação, contratação e status das contas"
+        >
+          <Users size={14} />
+          <span className="hidden sm:inline">RH</span>
+        </Link>
       </header>
 
       <div className="max-w-5xl mx-auto px-3 sm:px-5">
         <Tabs defaultValue="mostruario" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 h-auto gap-1 bg-white/70 border border-bege p-1">
+          <TabsList className="grid w-full grid-cols-3 sm:grid-cols-5 h-auto gap-1 bg-white/70 border border-bege p-1">
             <TabsTrigger value="mostruario" className={tabTriggerClass}>
               <Boxes size={14} className="sm:mr-1.5" />
               Estoque
@@ -52,10 +67,6 @@ export default function Admin() {
               <Package size={14} className="sm:mr-1.5" />
               Produtos
             </TabsTrigger>
-            <TabsTrigger value="nova-usuaria" className={tabTriggerClass}>
-              <UserPlus size={14} className="sm:mr-1.5" />
-              Nova Usuária
-            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="mostruario" className="mt-6">
@@ -72,9 +83,6 @@ export default function Admin() {
           </TabsContent>
           <TabsContent value="produtos" className="mt-6">
             <Produtos />
-          </TabsContent>
-          <TabsContent value="nova-usuaria" className="mt-6">
-            <NovaUsuaria />
           </TabsContent>
         </Tabs>
       </div>

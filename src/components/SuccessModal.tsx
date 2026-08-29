@@ -130,6 +130,52 @@ export default function SuccessModal({ items, cliente_nome, cliente_whatsapp, re
           </p>
         </div>
 
+        {/* Certificados da venda — um PDF por peça */}
+        <div className="mt-6 space-y-2.5">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-[#9B8E7E] font-semibold">
+            {items.length > 1 ? 'Certificados' : 'Certificado'}
+          </p>
+
+          {items.map((item, index) => (
+            <div
+              key={item.codigo_garantia}
+              className="p-4 bg-[#FAF9F7] border border-[#E8E2DA] rounded-2xl space-y-2.5"
+            >
+              <div>
+                <p className="text-sm font-semibold text-ink leading-tight">{item.produto_nome}</p>
+                <p className="text-[11px] text-[#9B8E7E] mt-0.5">{item.sku}</p>
+              </div>
+
+              <div className="flex items-baseline justify-between">
+                <span className="text-[10px] uppercase tracking-[0.15em] text-[#9B8E7E]">Código</span>
+                <span className="font-mono text-xs font-bold text-ink tracking-wider">
+                  {item.codigo_garantia}
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-[10px] uppercase tracking-[0.15em] text-[#9B8E7E]">Válido até</span>
+                <span className="text-[11px] font-semibold text-ink">
+                  {formatarData(item.validade_garantia)}
+                </span>
+              </div>
+
+              {item.pdf_garantia_url ? (
+                <button
+                  onClick={() => handleCompartilhar(item, index)}
+                  disabled={sharing[index]}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-[#C9A96E] text-[#C9A96E] text-[11px] font-semibold tracking-wide hover:bg-[#C9A96E] hover:text-white transition-all active:scale-[0.98] disabled:opacity-50"
+                >
+                  {sharing[index] ? <Loader2 size={13} className="animate-spin" /> : <ShareIcon size={13} />}
+                  {sharing[index] ? 'Preparando…' : shareBtnLabel}
+                </button>
+              ) : (
+                <p className="text-[10px] text-[#9B8E7E] text-center leading-relaxed">
+                  PDF indisponível — use o link de garantia abaixo.
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
 
         {/* Link de garantia da venda — copiar e enviar ao cliente */}
         <div className="mt-5 p-4 bg-[#FAF9F7] border border-[#E8E2DA] rounded-2xl space-y-2">
@@ -159,7 +205,7 @@ export default function SuccessModal({ items, cliente_nome, cliente_whatsapp, re
 
         {supportsShare && (
           <p className="text-center text-[10px] text-ink-soft mt-3 leading-relaxed">
-            Compartilhe o PDF pelo botão acima, depois abra o WhatsApp para enviar ao cliente.
+            Compartilhe o PDF no botão de cada certificado, depois abra o WhatsApp para enviar ao cliente.
           </p>
         )}
       </div>

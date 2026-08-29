@@ -20,6 +20,8 @@ type VendaResumo = {
   cliente_whatsapp: string;
   data_venda: string;
   produto_nome: string;
+  garantia_uuid: string | null;
+  created_at: string;
 };
 
 type ClienteExibido = Cliente & {
@@ -60,8 +62,11 @@ export default function Clientes() {
       supabase.from('profiles').select('user_id, display_name').order('display_name'),
       supabase
         .from('vendas')
-        .select('id, cliente_whatsapp, data_venda, produto_nome')
-        .order('data_venda', { ascending: false }),
+        .select('id, cliente_whatsapp, data_venda, produto_nome, garantia_uuid, created_at')
+        // data_venda é DATE: várias vendas no mesmo dia empatam, então created_at
+        // desempata para que a "última compra" seja de fato a mais recente
+        .order('data_venda', { ascending: false })
+        .order('created_at', { ascending: false }),
     ]);
     setClientes((c ?? []) as Cliente[]);
     setUsuarios((u ?? []) as Usuario[]);
@@ -230,10 +235,18 @@ export default function Clientes() {
                           <span className="text-ink">{c.ultima_venda.produto_nome}</span>
                         </span>
                         <a
-                          href={`/garantia/${c.ultima_venda.id}`}
+                          href={
+                            c.ultima_venda.garantia_uuid
+                              ? `/garantia?venda=${c.ultima_venda.garantia_uuid}`
+                              : `/garantia/${c.ultima_venda.id}`
+                          }
                           target="_blank"
                           rel="noopener noreferrer"
-                          title="Ver venda"
+                          title={
+                            c.ultima_venda.garantia_uuid
+                              ? 'Ver certificados da última venda'
+                              : 'Ver certificado'
+                          }
                           className="text-ink-soft hover:text-rosa transition-colors"
                         >
                           <ExternalLink size={12} />

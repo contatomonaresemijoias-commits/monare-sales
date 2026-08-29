@@ -3,6 +3,7 @@ import { Loader2, FileText, Wallet, CheckCheck, Search, X, Share2, Download, Sho
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
+import { formatDateBR, statusComissao, MINIMO_VENDAS_SAQUE } from '@/lib/monare';
 
 async function compartilharPDFAdmin(url: string, sku: string) {
   const response = await fetch(url);
@@ -127,6 +128,7 @@ function SaldoCard({
   const urg = urgencia(s);
   const qtdVendidas = Number(s?.qtd_vendas ?? 0);
   const pct = s?.comissao_percentual ?? 0;
+  const saque = statusComissao(s?.total_vendas);
 
   const diffDias = acerto
     ? Math.floor((acerto.getTime() - Date.now()) / 86_400_000)
@@ -190,6 +192,18 @@ function SaldoCard({
             )}
           </div>
           <span className="font-bold text-rosa text-sm">{fmt(s?.total_comissao)}</span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-ink-soft">Liberada para receber</span>
+          {saque.liberada ? (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+              Sim
+            </span>
+          ) : (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-bege-light text-ink-soft">
+              Não — faltam {fmt(saque.faltam)}
+            </span>
+          )}
         </div>
       </div>
       <Button
@@ -284,8 +298,12 @@ export default function Vendas() {
   async function fecharCiclo(u: Usuario) {
     const saldo = saldos[u.user_id];
     const nome = u.display_name ?? u.user_id;
+    const saque = statusComissao(saldo?.total_vendas);
+    const linhaSaque = saque.liberada
+      ? 'Liberada para receber: SIM'
+      : `Liberada para receber: NÃO — faltam ${fmt(saque.faltam)} para o mínimo de ${fmt(MINIMO_VENDAS_SAQUE)}`;
     const msg = saldo
-      ? `Acerto de contas para "${nome}"?\n\nVendas: ${Number(saldo.qtd_vendas)}\nTotal vendido: ${fmt(saldo.total_vendas)}\nComissão a pagar: ${fmt(saldo.total_comissao)}\n\nO ciclo será fechado, o saldo voltará a zero e o estoque será zerado.`
+      ? `Acerto de contas para "${nome}"?\n\nVendas: ${Number(saldo.qtd_vendas)}\nTotal vendido: ${fmt(saldo.total_vendas)}\nComissão a pagar: ${fmt(saldo.total_comissao)}\n${linhaSaque}\n\nO ciclo será fechado, o saldo voltará a zero e o estoque será zerado.`
       : `Fechar ciclo de "${nome}"?`;
     if (!confirm(msg)) return;
 
@@ -455,17 +473,28 @@ export default function Vendas() {
               )}
               {vendasFiltradas.map((v) => (
                 <tr key={v.id} className="border-b border-border/50 hover:bg-bege-light/40">
-                  <td className="py-2 pr-2 text-ink-soft">{new Date(v.data_venda).toLocaleDateString('pt-BR')}</td>
+                  <td className="py-2 pr-2 text-ink-soft">{formatDateBR(v.data_venda)}</td>
                   <td className="py-2 pr-2">{nomeUsuario(v.user_id)}</td>
                   <td className="py-2 pr-2 truncate max-w-[200px]">{v.produto_nome}</td>
                   <td className="py-2 pr-2 truncate max-w-[150px]">{v.cliente_nome}</td>
                   <td className="py-2 pr-2 text-right">{fmt(v.valor_venda)}</td>
                   <td className="py-2 text-center">
-                    {v.pdf_garantia_url ? (
-                      <PdfShareButton url={v.pdf_garantia_url} sku={v.produto_nome} />
-                    ) : (
-                      <span className="text-[10px] text-ink-soft">—</span>
-                    )}
+                    {/* O certificado da peça existe sempre (codigo_garantia é NOT NULL);
+                        o PDF só nas vendas registradas depois da geração automática. */}
+                    <div className="flex items-center justify-center gap-0.5">
+                      <a
+                        href={`/garantia?codigo=${v.codigo_garantia}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Ver certificado desta peça"
+                        className="flex items-center justify-center p-1.5 rounded-md text-[#C9A96E] hover:bg-[#C9A96E]/10 transition-colors"
+                      >
+                        <FileText size={14} />
+                      </a>
+                      {v.pdf_garantia_url && (
+                        <PdfShareButton url={v.pdf_garantia_url} sku={v.produto_nome} />
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

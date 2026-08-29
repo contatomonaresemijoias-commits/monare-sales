@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   Truck,
   PackageOpen,
+  AlertTriangle,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from '@/integrations/supabase/client';
@@ -48,8 +49,23 @@ type VendaSucesso = {
 
 // Linha parseada de uma planilha/CSV de importação
 type ImportRow = { sku: string; qty: number; nome: string; preco: number };
+// Qual preço usar quando o arquivo diverge do cadastro
+type EscolhaPreco = 'sistema' | 'arquivo';
 // Item já casado com um produto existente (será somado ao estoque)
-type PreviewExistente = { sku: string; nome: string; qty: number; produto_id: string };
+type PreviewExistente = {
+  sku: string;
+  nome: string;
+  qty: number;
+  produto_id: string;
+  precoSistema: number;
+  // Preço lido do arquivo; null quando o arquivo não trouxe preço válido.
+  precoArquivo: number | null;
+  // true quando o arquivo trouxe um preço diferente do cadastrado.
+  divergente: boolean;
+  escolha: EscolhaPreco;
+  // true quando o produto existe no catálogo mas está inativo (será reativado).
+  inativo: boolean;
+};
 // Item novo (SKU sem produto) que será criado automaticamente
 type PreviewNovo = { sku: string; nome: string; preco: number; qty: number };
 // Item descartado, com o motivo
@@ -98,16 +114,20 @@ export default function Mostruario() {
   const [vendendo, setVendendo] = useState(false);
   const [vendaSucesso, setVendaSucesso] = useState<VendaSucesso | null>(null);
 
+  // O catálogo em memória guarda todos os produtos (inclusive inativos) para que a
+  // importação reconheça um SKU já existente; a inserção manual só oferece os ativos.
+  const produtosAtivos = useMemo(() => produtos.filter((p) => p.ativo), [produtos]);
+
   const produtoPreview = useMemo(() => {
     if (!addSku) return null;
-    return produtos.find((p) => p.sku.toUpperCase() === addSku.trim().toUpperCase()) ?? null;
-  }, [addSku, produtos]);
+    return produtosAtivos.find((p) => p.sku.toUpperCase() === addSku.trim().toUpperCase()) ?? null;
+  }, [addSku, produtosAtivos]);
 
   useEffect(() => {
     (async () => {
       const [{ data: us }, { data: pr }] = await Promise.all([
         supabase.from('profiles').select('user_id, display_name, ativo').order('display_name'),
-        supabase.from('produtos').select('*').eq('ativo', true).order('sku'),
+        supabase.from('produtos').select('*').order('sku'),
       ]);
       const ativos = ((us ?? []) as any[]).filter((u) => u.ativo !== false);
       setUsuarios(ativos as Usuario[]);
@@ -220,6 +240,10 @@ export default function Mostruario() {
     if (typeof v === 'number') return v;
     const s = String(v ?? '').trim();
     if (!s) return NaN;
+    // Sem vírgula e com um único ponto seguido de 1-2 dígitos: ponto é decimal ("12.90").
+    if (!s.includes(',') && /^-?\d+\.\d{1,2}$/.test(s.replace(/[^\d.-]/g, ''))) {
+      return Number(s.replace(/[^\d.-]/g, ''));
+    }
     // Remove separador de milhar (.) e troca a vírgula decimal por ponto.
     const normalized = s.replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
     return normalized ? Number(normalized) : NaN;
@@ -284,7 +308,22 @@ export default function Mostruario() {
     for (const { sku, qty, nome, preco } of rows) {
       const prod = produtos.find((p) => p.sku.toUpperCase() === sku);
       if (prod) {
-        existentes.push({ sku: prod.sku, nome: prod.nome, qty, produto_id: prod.id });
+        const precoSistema = prod.preco_venda ?? 0;
+        const precoArquivo = preco > 0 ? preco : null;
+        // Divergência só quando o arquivo trouxe preço e ele difere em pelo menos 1 centavo.
+        const divergente = precoArquivo !== null && Math.abs(precoArquivo - precoSistema) >= 0.01;
+        existentes.push({
+          sku: prod.sku,
+          nome: prod.nome,
+          qty,
+          produto_id: prod.id,
+          precoSistema,
+          precoArquivo,
+          divergente,
+          // Por padrão mantém o preço já cadastrado; a admin escolhe trocar.
+          escolha: 'sistema',
+          inativo: !prod.ativo,
+        });
         continue;
       }
       // SKU novo: precisa de nome (2-200) e preço > 0 para ser criado ativo.
@@ -300,6 +339,18 @@ export default function Mostruario() {
     }
 
     return { existentes, novos, ignorados };
+  }
+
+  // Troca o preço escolhido para um item com divergência entre arquivo e cadastro.
+  function escolherPreco(sku: string, escolha: EscolhaPreco) {
+    setImportPreview((prev) =>
+      prev
+        ? {
+            ...prev,
+            existentes: prev.existentes.map((it) => (it.sku === sku ? { ...it, escolha } : it)),
+          }
+        : prev,
+    );
   }
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -347,13 +398,41 @@ export default function Mostruario() {
     try {
       const { existentes, novos } = importPreview;
 
-      // 1) Cria os produtos novos em lote (ativos, com o preço do arquivo).
-      let criados: Produto[] = [];
+      // 1) Reconfere no banco quais SKUs "novos" já existem. O catálogo em memória
+      //    pode estar desatualizado (outra admin cadastrou o produto nesse meio-tempo),
+      //    e o SKU tem UNIQUE — sem essa checagem o insert em lote quebra inteiro
+      //    com 23505 (duplicate key) e a importação toda é perdida.
+      let jaCadastrados: Produto[] = [];
       if (novos.length) {
         const { data, error } = await supabase
           .from('produtos')
+          .select('id, sku, nome, ativo, preco_venda')
+          .in('sku', novos.map((n) => n.sku));
+
+        if (error) {
+          toast({ title: 'Erro ao conferir catálogo', description: error.message, variant: 'destructive' });
+          setImporting(false);
+          return;
+        }
+        jaCadastrados = (data ?? []) as Produto[];
+        if (jaCadastrados.length) {
+          // Reaproveita o produto existente em vez de tentar criar de novo.
+          setProdutos((ps) => {
+            const conhecidos = new Set(ps.map((p) => p.id));
+            return [...ps, ...jaCadastrados.filter((p) => !conhecidos.has(p.id))];
+          });
+        }
+      }
+      const jaCadastradoPorSku = new Map(jaCadastrados.map((p) => [p.sku.toUpperCase(), p]));
+      const paraCriar = novos.filter((n) => !jaCadastradoPorSku.has(n.sku.toUpperCase()));
+
+      // 1.1) Cria os produtos realmente novos em lote (ativos, com o preço do arquivo).
+      let criados: Produto[] = [];
+      if (paraCriar.length) {
+        const { data, error } = await supabase
+          .from('produtos')
           .insert(
-            novos.map((n) => ({
+            paraCriar.map((n) => ({
               sku: n.sku,
               nome: n.nome,
               preco_venda: n.preco,
@@ -363,7 +442,14 @@ export default function Mostruario() {
           .select('id, sku, nome, ativo, preco_venda');
 
         if (error) {
-          toast({ title: 'Erro ao criar produtos', description: error.message, variant: 'destructive' });
+          const duplicado = error.code === '23505';
+          toast({
+            title: 'Erro ao criar produtos',
+            description: duplicado
+              ? 'Um dos SKUs já existe no catálogo. Recarregue a página e importe novamente.'
+              : error.message,
+            variant: 'destructive',
+          });
           setImporting(false);
           return;
         }
@@ -372,9 +458,51 @@ export default function Mostruario() {
         setProdutos((ps) => [...ps, ...criados]);
       }
 
+      // 1.2) Reativa os produtos inativos que voltaram a ser importados — sem isso
+      //      eles não aparecem na inserção manual nem no catálogo ativo.
+      const idsReativar = [
+        ...existentes.filter((it) => it.inativo).map((it) => it.produto_id),
+        ...jaCadastrados.filter((p) => !p.ativo).map((p) => p.id),
+      ];
+      if (idsReativar.length) {
+        const { error } = await supabase.from('produtos').update({ ativo: true }).in('id', idsReativar);
+        if (error) {
+          toast({ title: 'Erro ao reativar produtos', description: error.message, variant: 'destructive' });
+        } else {
+          const alvo = new Set(idsReativar);
+          setProdutos((ps) => ps.map((p) => (alvo.has(p.id) ? { ...p, ativo: true } : p)));
+        }
+      }
+
+      // 1.1) Atualiza o preço dos produtos em que a admin optou pelo valor do arquivo.
+      const trocarPreco = existentes.filter(
+        (it) => it.divergente && it.escolha === 'arquivo' && it.precoArquivo !== null,
+      );
+      let precosAtualizados = 0;
+      for (const it of trocarPreco) {
+        const novoPreco = it.precoArquivo as number;
+        const { error } = await supabase
+          .from('produtos')
+          .update({ preco_venda: novoPreco })
+          .eq('id', it.produto_id);
+        if (error) {
+          toast({
+            title: `Erro ao atualizar preço de ${it.sku}`,
+            description: error.message,
+            variant: 'destructive',
+          });
+          continue;
+        }
+        precosAtualizados++;
+        setProdutos((ps) =>
+          ps.map((p) => (p.id === it.produto_id ? { ...p, preco_venda: novoPreco } : p)),
+        );
+      }
+
       // 2) Mapa sku -> produto_id juntando catálogo existente + recém-criados.
       const idPorSku = new Map<string, string>();
       for (const p of produtos) idPorSku.set(p.sku.toUpperCase(), p.id);
+      for (const p of jaCadastrados) idPorSku.set(p.sku.toUpperCase(), p.id);
       for (const p of criados) idPorSku.set(p.sku.toUpperCase(), p.id);
 
       // 3) Lança no estoque (soma quando já existe, insere quando novo).
@@ -401,6 +529,9 @@ export default function Mostruario() {
 
       const partes = [];
       if (criados.length) partes.push(`${criados.length} produto(s) criado(s)`);
+      if (jaCadastrados.length) partes.push(`${jaCadastrados.length} já existia(m) no catálogo`);
+      if (idsReativar.length) partes.push(`${idsReativar.length} produto(s) reativado(s)`);
+      if (precosAtualizados) partes.push(`${precosAtualizados} preço(s) atualizado(s)`);
       partes.push(`${alvos.length - erros} item(ns) no estoque`);
       if (erros) partes.push(`${erros} com erro`);
 
@@ -576,6 +707,11 @@ export default function Mostruario() {
 
   const totalEstoque = estoque.reduce((s, e) => s + e.quantidade, 0);
 
+  // Itens existentes separados: os com preço divergente pedem uma escolha da admin.
+  const divergentes = importPreview?.existentes.filter((it) => it.divergente) ?? [];
+  const semDivergencia = importPreview?.existentes.filter((it) => !it.divergente) ?? [];
+  const inativos = importPreview?.existentes.filter((it) => it.inativo) ?? [];
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-[280px,1fr] gap-6">
@@ -665,7 +801,7 @@ export default function Mostruario() {
               >
                 <div className="flex flex-col sm:flex-row gap-2">
                   <SkuCombobox
-                    produtos={produtos.map((p) => ({
+                    produtos={produtosAtivos.map((p) => ({
                       id: p.id,
                       sku: p.sku,
                       nome: p.nome,
@@ -842,6 +978,16 @@ export default function Mostruario() {
               <span className="px-3 py-1 rounded-full bg-bege-light text-ink-soft border border-bege font-medium">
                 {importPreview.existentes.length} já cadastrado(s)
               </span>
+              {divergentes.length > 0 && (
+                <span className="px-3 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-300 font-medium">
+                  {divergentes.length} com preço diferente
+                </span>
+              )}
+              {inativos.length > 0 && (
+                <span className="px-3 py-1 rounded-full bg-sky-50 text-sky-700 border border-sky-200 font-medium">
+                  {inativos.length} inativo(s) a reativar
+                </span>
+              )}
               {importPreview.ignorados.length > 0 && (
                 <span className="px-3 py-1 rounded-full bg-destructive/10 text-destructive border border-destructive/20 font-medium">
                   {importPreview.ignorados.length} ignorado(s)
@@ -872,20 +1018,97 @@ export default function Mostruario() {
                 </div>
               )}
 
+              {/* Preços divergentes: exige escolha entre o cadastro e o arquivo */}
+              {divergentes.length > 0 && (
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-amber-700 font-semibold mb-2 flex items-center gap-1.5">
+                    <AlertTriangle size={12} /> Preço diferente do cadastro — escolha qual usar
+                  </p>
+                  <div className="space-y-2">
+                    {divergentes.map((it) => {
+                      const doArquivo = it.precoArquivo as number;
+                      const maisCaro = doArquivo > it.precoSistema;
+                      return (
+                        <div
+                          key={it.sku}
+                          className="p-2.5 rounded-lg bg-amber-50/60 border border-amber-300 space-y-2"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs text-amber-800 font-bold w-24 shrink-0">
+                              {it.sku}
+                            </span>
+                            <span className="text-sm text-ink flex-1 truncate">{it.nome}</span>
+                            {it.inativo && (
+                              <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 shrink-0">
+                                inativo · será reativado
+                              </span>
+                            )}
+                            <span className="text-xs font-semibold text-ink shrink-0 w-12 text-right">
+                              ×{it.qty}
+                            </span>
+                          </div>
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <button
+                              type="button"
+                              onClick={() => escolherPreco(it.sku, 'sistema')}
+                              className={`flex-1 text-left px-3 py-2 rounded-lg border text-xs transition-colors ${
+                                it.escolha === 'sistema'
+                                  ? 'border-rosa bg-rosa/10 text-rosa font-semibold'
+                                  : 'border-border text-ink-soft hover:bg-bege-light'
+                              }`}
+                            >
+                              <span className="block uppercase tracking-wider text-[10px] opacity-80">
+                                Manter do sistema
+                              </span>
+                              R$ {it.precoSistema.toFixed(2)}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => escolherPreco(it.sku, 'arquivo')}
+                              className={`flex-1 text-left px-3 py-2 rounded-lg border text-xs transition-colors ${
+                                it.escolha === 'arquivo'
+                                  ? 'border-rosa bg-rosa/10 text-rosa font-semibold'
+                                  : 'border-border text-ink-soft hover:bg-bege-light'
+                              }`}
+                            >
+                              <span className="block uppercase tracking-wider text-[10px] opacity-80">
+                                Usar do arquivo ({maisCaro ? 'mais caro' : 'mais barato'})
+                              </span>
+                              R$ {doArquivo.toFixed(2)}
+                            </button>
+                          </div>
+                          {it.escolha === 'arquivo' && (
+                            <p className="text-[11px] text-amber-700">
+                              O preço do produto no catálogo será atualizado para R${' '}
+                              {doArquivo.toFixed(2)}.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Já cadastrados */}
-              {importPreview.existentes.length > 0 && (
+              {semDivergencia.length > 0 && (
                 <div>
                   <p className="text-xs uppercase tracking-wider text-ink-soft font-semibold mb-2">
                     Já cadastrados (somar ao estoque)
                   </p>
                   <div className="space-y-1.5">
-                    {importPreview.existentes.map((it) => (
+                    {semDivergencia.map((it) => (
                       <div
                         key={it.sku}
                         className="flex items-center gap-2 p-2.5 rounded-lg border border-border"
                       >
                         <span className="font-mono text-xs text-rosa font-bold w-24 shrink-0">{it.sku}</span>
                         <span className="text-sm text-ink flex-1 truncate">{it.nome}</span>
+                        {it.inativo && (
+                          <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 shrink-0">
+                            inativo · será reativado
+                          </span>
+                        )}
                         <span className="text-xs font-semibold text-ink shrink-0 w-12 text-right">×{it.qty}</span>
                       </div>
                     ))}

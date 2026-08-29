@@ -4,9 +4,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
 
-export default function NovaUsuaria() {
-  const [form, setForm] = useState({ nome: '', email: '', senha: '', role: 'revendedora' });
+const VAZIO = { nome: '', email: '', senha: '', telefone: '', role: 'revendedora' };
+
+export default function NovaUsuaria({ onCriada }: { onCriada?: () => void }) {
+  const { isAdmin } = useAuth();
+  const [form, setForm] = useState(VAZIO);
   const [busy, setBusy] = useState(false);
 
   async function criar(e: React.FormEvent) {
@@ -22,6 +26,7 @@ export default function NovaUsuaria() {
         email: form.email.trim(),
         password: form.senha,
         display_name: form.nome.trim(),
+        telefone: form.telefone.trim() || null,
         role: form.role,
       },
     });
@@ -33,15 +38,21 @@ export default function NovaUsuaria() {
     }
 
     toast({ title: 'Usuária criada com sucesso' });
-    setForm({ nome: '', email: '', senha: '', role: 'revendedora' });
+    setForm(VAZIO);
+    onCriada?.();
   }
 
   return (
-    <section className="bg-white rounded-2xl border border-bege p-6 max-w-lg">
-      <h3 className="font-serif text-xl text-ink mb-5 flex items-center gap-2">
+    <section className="bg-white rounded-2xl border border-bege p-6">
+      <h3 className="font-serif text-xl text-ink mb-1 flex items-center gap-2">
         <UserPlus size={16} className="text-rosa" />
         Nova Usuária
       </h3>
+      <p className="text-xs text-ink-soft mb-5">
+        Cadastro manual, para quem não veio pelo formulário público. Candidata que se
+        inscreveu deve ser contratada pela aba Captação, para a ficha ficar vinculada à conta.
+      </p>
+
       <form onSubmit={criar} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input
           placeholder="Nome completo"
@@ -64,7 +75,13 @@ export default function NovaUsuaria() {
           minLength={6}
           required
         />
-        <div className="flex items-center gap-2">
+        <Input
+          type="tel"
+          placeholder="Telefone (opcional)"
+          value={form.telefone}
+          onChange={(e) => setForm({ ...form, telefone: e.target.value })}
+        />
+        <div className="flex items-center gap-2 sm:col-span-2">
           <label className="text-xs text-ink-soft uppercase tracking-wider whitespace-nowrap">Tipo</label>
           <select
             value={form.role}
@@ -73,6 +90,9 @@ export default function NovaUsuaria() {
           >
             <option value="revendedora">Revendedora</option>
             <option value="b2b">B2B</option>
+            {/* Só a administração cria conta de RH — se o próprio RH pudesse,
+                fabricaria pares para contornar o bloqueio entre iguais. */}
+            {isAdmin && <option value="rh">RH</option>}
           </select>
         </div>
         <Button type="submit" disabled={busy} className="bg-rosa hover:bg-rosa/90 sm:col-span-2">

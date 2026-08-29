@@ -1,14 +1,7 @@
-User-agent: Googlebot
-Allow: /
-
-User-agent: Bingbot
-Allow: /
-
-User-agent: Twitterbot
-Allow: /
-
-User-agent: facebookexternalhit
-Allow: /
-
+# A landing pública (/) e o cadastro devem ser indexados; as telas internas não.
 User-agent: *
 Allow: /
+Disallow: /admin
+Disallow: /painel
+Disallow: /auth
+Disallow: /garantia
