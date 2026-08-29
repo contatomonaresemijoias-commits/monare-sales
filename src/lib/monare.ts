@@ -6,6 +6,14 @@
 export const INSTAGRAM_URL = 'https://www.instagram.com/monare.oficial/';
 export const WARRANTY_MONTHS = 12;
 
+/** WhatsApp oficial de atendimento (formato internacional, só dígitos). */
+export const WHATSAPP_MONARE = '5515996338541';
+
+/** Monta o link de conversa já com a mensagem preenchida. */
+export function whatsappLink(mensagem: string, numero = WHATSAPP_MONARE) {
+  return `https://wa.me/${numero}?text=${encodeURIComponent(mensagem)}`;
+}
+
 export const WARRANTY_TEXT =
   "concordo que estou entregando as peças em plenas condições com garantia de 12 meses.";
 
@@ -42,14 +50,64 @@ export function formatWhatsApp(value: string) {
   return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
 }
 
-export function getMinDate() {
-  const d = new Date();
-  d.setDate(d.getDate() - 3);
-  return d.toISOString().split('T')[0];
+// ── Comissão ─────────────────────────────────────────────────────────────────
+
+/**
+ * Vendas acumuladas no ciclo para a comissão poder ser sacada.
+ *
+ * Não confundir com o cálculo da comissão: ela é apurada desde a primeira
+ * venda (30% / 35% / 38%, iguais para todos os papéis). O que este mínimo
+ * define é quando o valor apurado fica liberado para receber.
+ */
+export const MINIMO_VENDAS_SAQUE = 600;
+
+export type StatusComissao = {
+  /** Já pode receber? */
+  liberada: boolean;
+  /** Quanto ainda falta vender no ciclo. Zero quando liberada. */
+  faltam: number;
+};
+
+export function statusComissao(totalVendas: number | null | undefined): StatusComissao {
+  const total = totalVendas ?? 0;
+  // Arredonda para centavos: sem isso, R$ 599,999… de soma em ponto flutuante
+  // apareceria como "faltam R$ 0,00" e ainda assim bloqueado.
+  const faltam = Math.max(0, Math.round((MINIMO_VENDAS_SAQUE - total) * 100) / 100);
+  return { liberada: faltam === 0, faltam };
 }
 
+/** Fuso da operação — todas as datas de venda são do ponto de vista do Brasil. */
+export const TIMEZONE_BR = 'America/Sao_Paulo';
+
+/**
+ * Soma (ou subtrai) dias a uma data YYYY-MM-DD sem passar por fuso horário.
+ * A aritmética é feita em UTC justamente para não escorregar de dia.
+ */
+export function addDaysISO(iso: string, days: number) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().split('T')[0];
+}
+
+/**
+ * Hoje em YYYY-MM-DD no horário de Brasília.
+ * Não usa toISOString() (que devolve a data em UTC e vira o dia às 21h daqui)
+ * nem o fuso do dispositivo — o formatter fixa America/Sao_Paulo.
+ * O locale en-CA é só o atalho para o formato YYYY-MM-DD.
+ */
 export function getToday() {
-  return new Date().toISOString().split('T')[0];
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIMEZONE_BR,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+/** Data mais antiga que a revendedora pode lançar: 3 dias atrás no horário de Brasília. */
+export function getMinDate() {
+  return addDaysISO(getToday(), -3);
 }
 
 export function formatDateBR(iso?: string | null) {

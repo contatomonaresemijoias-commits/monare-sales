@@ -3,20 +3,29 @@ import { useNavigate, Navigate } from 'react-router-dom';
 import { Loader2, ShieldCheck } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { whatsappLink } from '@/lib/monare';
+import usePageMeta from '@/hooks/usePageMeta';
+import { rotaInicial } from '@/lib/acesso';
 
 export default function AuthPage() {
-  const { user, loading, isAdmin } = useAuth();
+  const { user, loading, roles } = useAuth();
   const nav = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!loading && user) nav(isAdmin ? '/admin' : '/', { replace: true });
-  }, [user, loading, isAdmin, nav]);
+  usePageMeta({ title: 'Acesso da consultora — Monarê', noIndex: true });
 
-  if (!loading && user) return <Navigate to={isAdmin ? '/admin' : '/'} replace />;
+  // Uma tela de login para todo mundo; o papel é que decide o destino:
+  // administrador → /admin, rh → /rh, revendedora e B2B → /painel.
+  const destino = rotaInicial(roles);
+
+  useEffect(() => {
+    if (!loading && user) nav(destino, { replace: true });
+  }, [user, loading, destino, nav]);
+
+  if (!loading && user) return <Navigate to={destino} replace />;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -33,7 +42,12 @@ export default function AuthPage() {
         'User already registered': 'Este e-mail já está cadastrado.',
         'Password should be at least 6 characters': 'A senha deve ter pelo menos 6 caracteres.',
       };
-      const friendly = map[raw] ?? 'Erro inesperado. Tente novamente.';
+      // Conta desativada pela admin é banida no Auth; a mensagem do GoTrue
+      // varia ("User is banned" / "user_banned"), então casa por trecho.
+      const banida = /banned/i.test(raw);
+      const friendly = banida
+        ? 'Esta conta está desativada. Fale com a administração da Monarê.'
+        : map[raw] ?? 'Erro inesperado. Tente novamente.';
       setError(friendly);
       console.error('[Auth]', err);
     } finally {
@@ -109,9 +123,9 @@ export default function AuthPage() {
             </p>
 
             <a
-              href={`https://wa.me/5515996338541?text=${encodeURIComponent(
+              href={whatsappLink(
                 'Olá, tudo bom? Eu acessei o site de vocês Monarê e gostaria de me tornar uma revendedora de vocês.'
-              )}`}
+              )}
               target="_blank"
               rel="noopener noreferrer"
               className="block w-full text-center py-3 rounded-2xl border border-rosa text-rosa text-xs font-semibold hover:bg-rosa/5 transition-colors"

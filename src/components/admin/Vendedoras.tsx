@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { Loader2, Trash2, Search, X, ShoppingBag, Boxes, ChevronRight, KeyRound, PowerOff, Power } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Loader2, Search, X, ShoppingBag, Boxes, ChevronRight, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
+import { formatDateBR } from '@/lib/monare';
+import { RH_PATH } from '@/lib/acesso';
 
 type VendedoraRow = {
   id: string;
@@ -30,6 +33,13 @@ type VendaDetalhe = {
 const fmt = (n: number | null | undefined) =>
   (n ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+/**
+ * Visão operacional da revendedora: o que ela tem em mãos e o que já vendeu.
+ *
+ * Ativar/inativar, redefinir senha, excluir conta e criar usuária saíram
+ * daqui e viraram trabalho do painel de RH (/rh) — esta tela mostra o status
+ * da conta, mas quem o muda é lá.
+ */
 export default function Vendedoras() {
   const [users, setUsers] = useState<VendedoraRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,14 +57,6 @@ export default function Vendedoras() {
   const [editandoTel, setEditandoTel] = useState(false);
   const [novoTel, setNovoTel] = useState('');
   const [salvandoTel, setSalvandoTel] = useState(false);
-
-  // Reset de senha
-  const [resetandoSenha, setResetandoSenha] = useState(false);
-  const [novaSenha, setNovaSenha] = useState('');
-  const [salvandoSenha, setSalvandoSenha] = useState(false);
-
-  // Toggle ativo
-  const [salvandoAtivo, setSalvandoAtivo] = useState(false);
 
   const usuariosFiltrados = useMemo(() => {
     const q = searchInput.trim().toLowerCase();
@@ -104,48 +106,10 @@ export default function Vendedoras() {
     }
   }
 
-  async function salvarSenha() {
-    if (!selectedUser) return;
-    if (novaSenha.length < 6) {
-      toast({ title: 'Senha deve ter ao menos 6 caracteres', variant: 'destructive' });
-      return;
-    }
-    setSalvandoSenha(true);
-    const { data, error } = await supabase.functions.invoke('admin-manage-users', {
-      body: { action: 'reset_password', user_id: selectedUser.user_id, new_password: novaSenha },
-    });
-    setSalvandoSenha(false);
-    if (error || data?.error) {
-      toast({ title: 'Erro ao redefinir senha', description: error?.message || data?.error, variant: 'destructive' });
-    } else {
-      setNovaSenha('');
-      setResetandoSenha(false);
-      toast({ title: 'Senha redefinida com sucesso' });
-    }
-  }
-
-  async function toggleAtivo(u: VendedoraRow) {
-    const novoAtivo = !u.ativo;
-    setSalvandoAtivo(true);
-    const { data, error } = await supabase.functions.invoke('admin-manage-users', {
-      body: { action: 'toggle_active', user_id: u.user_id, ativo: novoAtivo },
-    });
-    setSalvandoAtivo(false);
-    if (error || data?.error) {
-      toast({ title: 'Erro ao alterar status', description: error?.message || data?.error, variant: 'destructive' });
-    } else {
-      setUsers((prev) => prev.map((x) => x.user_id === u.user_id ? { ...x, ativo: novoAtivo } : x));
-      setSelectedUser((prev) => prev?.user_id === u.user_id ? { ...prev, ativo: novoAtivo } : prev);
-      toast({ title: novoAtivo ? 'Perfil reativado' : 'Perfil desativado' });
-    }
-  }
-
   async function loadDetalhe(u: VendedoraRow) {
     setSelectedUser(u);
     setEditandoTel(false);
     setNovoTel(u.telefone ?? '');
-    setResetandoSenha(false);
-    setNovaSenha('');
     setLoadingDetalhe(true);
     const [{ data: est }, { data: vnd }] = await Promise.all([
       supabase
@@ -163,20 +127,6 @@ export default function Vendedoras() {
     setDetalheEstoque((est ?? []) as EstoqueDetalhe[]);
     setDetalheVendas((vnd ?? []) as VendaDetalhe[]);
     setLoadingDetalhe(false);
-  }
-
-  async function excluir(u: VendedoraRow) {
-    if (!confirm(`Remover ${u.email ?? u.display_name}?`)) return;
-    const { data, error } = await supabase.functions.invoke('admin-manage-users', {
-      body: { action: 'delete', user_id: u.user_id },
-    });
-    if (error || data?.error) {
-      toast({ title: 'Erro ao remover', description: error?.message || data?.error, variant: 'destructive' });
-    } else {
-      toast({ title: 'Removida' });
-      if (selectedUser?.user_id === u.user_id) setSelectedUser(null);
-      load();
-    }
   }
 
   if (loading) {
@@ -240,7 +190,6 @@ export default function Vendedoras() {
 
           <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
             {users.map((u) => {
-              const isAdmin = u.roles.includes('administrador');
               const isSelected = selectedUser?.user_id === u.user_id;
               return (
                 <div
@@ -258,15 +207,6 @@ export default function Vendedoras() {
                       {!u.ativo && <span className="text-[9px] uppercase tracking-wider text-ink-soft bg-ink-soft/10 px-1 rounded">Inativo</span>}
                     </div>
                   </div>
-                  {!isAdmin && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); excluir(u); }}
-                      className="text-xs p-1.5 rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20 shrink-0"
-                      title="Excluir"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  )}
                   <ChevronRight size={14} className={`shrink-0 transition-colors ${isSelected ? 'text-rosa' : 'text-ink-soft'}`} />
                 </div>
               );
@@ -290,26 +230,17 @@ export default function Vendedoras() {
                     <p className="text-xs text-ink-soft mt-0.5">{selectedUser.email}</p>
                   </div>
 
-                  {/* Status ativo/inativo — cor mostra estado atual; clique alterna */}
-                  {!selectedUser.roles.includes('administrador') && (
-                    <button
-                      disabled={salvandoAtivo}
-                      onClick={() => toggleAtivo(selectedUser)}
-                      title={selectedUser.ativo ? 'Clique para desativar' : 'Clique para reativar'}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all disabled:opacity-60 ${
-                        selectedUser.ativo
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
-                          : 'bg-red-50 text-red-600 border-red-300 hover:bg-red-100'
-                      }`}
-                    >
-                      {salvandoAtivo ? (
-                        <Loader2 size={11} className="animate-spin" />
-                      ) : (
-                        <span className={`w-2 h-2 rounded-full ${selectedUser.ativo ? 'bg-emerald-500' : 'bg-red-400'}`} />
-                      )}
-                      {selectedUser.ativo ? 'Ativo' : 'Inativo'}
-                    </button>
-                  )}
+                  {/* Status só de leitura: quem alterna é o painel de RH. */}
+                  <span
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                      selectedUser.ativo
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                        : 'bg-red-50 text-red-600 border-red-300'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${selectedUser.ativo ? 'bg-emerald-500' : 'bg-red-400'}`} />
+                    {selectedUser.ativo ? 'Ativo' : 'Inativo'}
+                  </span>
                 </div>
 
                 {/* Telefone editável */}
@@ -345,37 +276,13 @@ export default function Vendedoras() {
                   </div>
                 )}
 
-                {/* Redefinir senha */}
-                {!selectedUser.roles.includes('administrador') && (
-                  <>
-                    {!resetandoSenha ? (
-                      <button
-                        onClick={() => { setResetandoSenha(true); setNovaSenha(''); }}
-                        className="flex items-center gap-1.5 text-[11px] text-ink-soft hover:text-rosa transition-colors"
-                      >
-                        <KeyRound size={12} />
-                        Redefinir senha
-                      </button>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="password"
-                          value={novaSenha}
-                          onChange={(e) => setNovaSenha(e.target.value)}
-                          placeholder="Nova senha (mín. 6)"
-                          minLength={6}
-                          className="h-8 text-sm w-44"
-                        />
-                        <Button size="sm" className="h-8 text-xs bg-rosa hover:bg-rosa/90" disabled={salvandoSenha} onClick={salvarSenha}>
-                          {salvandoSenha ? <Loader2 size={12} className="animate-spin" /> : 'Salvar'}
-                        </Button>
-                        <button onClick={() => setResetandoSenha(false)} className="text-xs text-ink-soft hover:text-ink">
-                          <X size={14} />
-                        </button>
-                      </div>
-                    )}
-                  </>
-                )}
+                <Link
+                  to={RH_PATH}
+                  className="inline-flex items-center gap-1.5 text-[11px] text-ink-soft hover:text-rosa transition-colors"
+                >
+                  <Users size={12} />
+                  Ativar, inativar ou redefinir senha no painel de RH
+                </Link>
               </div>
 
               {loadingDetalhe ? (
@@ -442,7 +349,7 @@ export default function Vendedoras() {
                               <div className="text-right shrink-0">
                                 <p className="text-xs font-semibold text-rosa">{fmt(v.valor_venda)}</p>
                                 <p className="text-[10px] text-ink-soft">
-                                  {new Date(v.data_venda).toLocaleDateString('pt-BR')}
+                                  {formatDateBR(v.data_venda)}
                                 </p>
                               </div>
                             </div>

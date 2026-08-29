@@ -12,13 +12,24 @@ import { describe, it, expect } from 'vitest';
 
 // ─── Simulação dos handlers do edge function ──────────────────────────────────
 
-const allowedRoles = ['revendedora', 'b2b'] as const;
-type AllowedRole = typeof allowedRoles[number];
+// Espelha a whitelist de `create` da edge function. Papel fora da lista era
+// rebaixado para 'revendedora' em silêncio; hoje é recusado — criar conta com
+// o papel errado é erro de chamada, não algo para adivinhar.
+const CRIAVEIS_POR_ADMIN = ['revendedora', 'b2b', 'rh'] as const;
+const CRIAVEIS_POR_RH = ['revendedora', 'b2b'] as const;
 
-function assignRole(requestedRole: string): AllowedRole {
-  return allowedRoles.includes(requestedRole as AllowedRole)
-    ? (requestedRole as AllowedRole)
-    : 'revendedora';
+type Chamador = 'administrador' | 'rh';
+
+function assignRole(
+  requestedRole: string,
+  chamador: Chamador = 'administrador',
+): { ok: true; role: string } | { ok: false; status: number } {
+  const permitidos: readonly string[] =
+    chamador === 'administrador' ? CRIAVEIS_POR_ADMIN : CRIAVEIS_POR_RH;
+  if (!permitidos.includes(requestedRole)) {
+    return { ok: false, status: chamador === 'administrador' ? 400 : 403 };
+  }
+  return { ok: true, role: requestedRole };
 }
 
 /** Simula o que o edge function retorna em erro (versão segura) */
@@ -56,21 +67,34 @@ function serializarPerfilSeguro(row: UserDbRow) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('Autenticação — Role whitelist no edge function', () => {
-  it('role "administrador" enviado pelo cliente é downgraded para "revendedora"', () => {
-    expect(assignRole('administrador')).toBe('revendedora');
+  it('role "administrador" enviado pelo cliente é recusado, nunca concedido', () => {
+    expect(assignRole('administrador')).toEqual({ ok: false, status: 400 });
   });
 
-  it('role "superadmin" desconhecido é downgraded para "revendedora"', () => {
-    expect(assignRole('superadmin')).toBe('revendedora');
+  it('role "superadmin" desconhecido é recusado', () => {
+    expect(assignRole('superadmin')).toEqual({ ok: false, status: 400 });
   });
 
-  it('role vazio é downgraded para "revendedora"', () => {
-    expect(assignRole('')).toBe('revendedora');
+  it('role vazio é recusado', () => {
+    expect(assignRole('')).toEqual({ ok: false, status: 400 });
   });
 
   it('roles válidos são aceitos', () => {
-    expect(assignRole('revendedora')).toBe('revendedora');
-    expect(assignRole('b2b')).toBe('b2b');
+    expect(assignRole('revendedora')).toEqual({ ok: true, role: 'revendedora' });
+    expect(assignRole('b2b')).toEqual({ ok: true, role: 'b2b' });
+  });
+
+  it('admin pode criar conta de RH', () => {
+    expect(assignRole('rh', 'administrador')).toEqual({ ok: true, role: 'rh' });
+  });
+
+  it('RH NÃO pode criar outra conta de RH — fabricaria pares para se blindar', () => {
+    expect(assignRole('rh', 'rh')).toEqual({ ok: false, status: 403 });
+  });
+
+  it('RH continua criando revendedora e B2B, que é o trabalho dele', () => {
+    expect(assignRole('revendedora', 'rh')).toEqual({ ok: true, role: 'revendedora' });
+    expect(assignRole('b2b', 'rh')).toEqual({ ok: true, role: 'b2b' });
   });
 });
 

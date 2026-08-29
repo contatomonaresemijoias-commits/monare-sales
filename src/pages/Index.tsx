@@ -1,13 +1,17 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { LogOut, Settings } from 'lucide-react';
+import { LogOut, Settings, Users } from 'lucide-react';
 import SaleRegistrationForm from '@/components/SaleRegistrationForm';
 import EstoqueSidebar from '@/components/EstoqueSidebar';
 import Dashboard from '@/components/Dashboard';
 import { useAuth } from '@/hooks/useAuth';
+import { ADMIN_PATH, RH_PATH } from '@/lib/acesso';
+
+const atalhoClass =
+  'inline-flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/80 hover:bg-white text-ink text-[11px] uppercase tracking-wider font-semibold border border-bege transition-all';
 
 const Index = () => {
-  const { signOut, isAdmin, isRevendedora, isB2B, user } = useAuth();
+  const { signOut, isAdmin, isRh, isRevendedora, isB2B, user } = useAuth();
   const [selectedSku, setSelectedSku] = useState<string | undefined>();
 
   const showDashboard = isRevendedora || isB2B || isAdmin;
@@ -17,12 +21,15 @@ const Index = () => {
       {user && (
         <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
           {isAdmin && (
-            <Link
-              to="/admin"
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/80 hover:bg-white text-ink text-[11px] uppercase tracking-wider font-semibold border border-bege transition-all"
-            >
+            <Link to={ADMIN_PATH} className={atalhoClass}>
               <Settings size={13} />
               Painel Admin
+            </Link>
+          )}
+          {(isAdmin || isRh) && (
+            <Link to={RH_PATH} className={atalhoClass}>
+              <Users size={13} />
+              Painel RH
             </Link>
           )}
           <button

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, Check, Pencil, X, Tag, ChevronDown, ChevronRight } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Loader2, Plus, Trash2, Check, Pencil, X, Tag, ChevronDown, ChevronRight, Search } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,15 @@ type Produto = {
   categoria_id: string | null;
 };
 
+// Texto comparável na busca: sem caixa e sem acento, para que "coracao" ache
+// "Coração" e "pra" ache tanto o SKU "…-PRA" quanto "Prata".
+function normalizar(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+}
+
 export default function Produtos() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -28,6 +37,9 @@ export default function Produtos() {
   // Seções colapsáveis
   const [catExpanded, setCatExpanded] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  // Busca no catálogo (por SKU ou nome)
+  const [busca, setBusca] = useState('');
 
   // Formulário de nova categoria
   const [catNome, setCatNome] = useState('');
@@ -90,7 +102,6 @@ export default function Produtos() {
       toast({ title: 'Erro', description: error.message, variant: 'destructive' });
     } else {
       setCatNome('');
-      setCatPrefixo('');
       toast({ title: 'Categoria criada' });
       load();
     }
@@ -203,6 +214,17 @@ export default function Produtos() {
     setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
+  const termo = normalizar(busca.trim());
+  const buscando = termo.length > 0;
+
+  // Catálogo filtrado por SKU ou nome. Sem termo, é a lista inteira.
+  const filtrados = useMemo(() => {
+    if (!termo) return produtos;
+    return produtos.filter(
+      (p) => normalizar(p.sku).includes(termo) || normalizar(p.nome).includes(termo),
+    );
+  }, [produtos, termo]);
+
   if (loading)
     return (
       <div className="flex justify-center py-10">
@@ -211,13 +233,14 @@ export default function Produtos() {
     );
 
   // Agrupa produtos: primeiro por categoria, depois sem categoria
-  const semCategoria = produtos.filter((p) => !p.categoria_id);
+  const semCategoria = filtrados.filter((p) => !p.categoria_id);
   const grupos = categorias.map((cat) => ({
     cat,
-    prods: produtos.filter((p) => p.categoria_id === cat.id),
+    prods: filtrados.filter((p) => p.categoria_id === cat.id),
   }));
 
   const totalProdutos = produtos.length;
+  const totalFiltrados = filtrados.length;
 
   return (
     <div className="space-y-6">
@@ -336,13 +359,39 @@ export default function Produtos() {
 
       {/* ── Catálogo agrupado por categoria ── */}
       <section className="bg-white rounded-2xl border border-bege p-5">
-        <h3 className="font-serif text-xl text-ink mb-4">Catálogo ({totalProdutos})</h3>
+        <h3 className="font-serif text-xl text-ink mb-4">
+          Catálogo ({buscando ? `${totalFiltrados} de ${totalProdutos}` : totalProdutos})
+        </h3>
+
+        {/* Busca por SKU ou nome */}
+        <div className="relative mb-4">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-soft" />
+          <Input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar por SKU ou nome..."
+            className="pl-9 pr-9"
+          />
+          {buscando && (
+            <button
+              type="button"
+              onClick={() => setBusca('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-soft hover:text-ink p-1 rounded-md"
+              title="Limpar busca"
+              aria-label="Limpar busca"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
 
         <div className="space-y-4">
           {/* Grupos por categoria */}
           {grupos.map(({ cat, prods }) => {
             if (prods.length === 0) return null;
-            const isCollapsed = collapsed[cat.id];
+            // Durante a busca os grupos ficam sempre abertos: um resultado escondido
+            // dentro de uma categoria recolhida parece "não encontrado".
+            const isCollapsed = !buscando && collapsed[cat.id];
             return (
               <div key={cat.id}>
                 <button
@@ -389,7 +438,7 @@ export default function Produtos() {
                 onClick={() => toggleCollapsed('__sem_cat__')}
                 className="flex items-center gap-2 w-full text-left mb-2"
               >
-                {collapsed['__sem_cat__'] ? (
+                {!buscando && collapsed['__sem_cat__'] ? (
                   <ChevronRight size={14} className="text-ink-soft" />
                 ) : (
                   <ChevronDown size={14} className="text-ink-soft" />
@@ -398,7 +447,7 @@ export default function Produtos() {
                 <span className="text-xs text-ink-soft">({semCategoria.length})</span>
               </button>
 
-              {!collapsed['__sem_cat__'] && (
+              {(buscando || !collapsed['__sem_cat__']) && (
                 <div className="space-y-2 pl-4">
                   {semCategoria.map((p) => (
                     <ProdutoRow
@@ -421,8 +470,12 @@ export default function Produtos() {
             </div>
           )}
 
-          {totalProdutos === 0 && (
-            <p className="text-sm text-ink-soft text-center py-4">Nenhum produto cadastrado.</p>
+          {totalFiltrados === 0 && (
+            <p className="text-sm text-ink-soft text-center py-4">
+              {buscando
+                ? `Nenhum produto encontrado para "${busca.trim()}".`
+                : 'Nenhum produto cadastrado.'}
+            </p>
           )}
         </div>
       </section>
