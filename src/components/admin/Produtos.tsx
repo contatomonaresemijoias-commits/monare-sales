@@ -3,6 +3,7 @@ import { Loader2, Plus, Trash2, Check, Pencil, X, Tag, ChevronDown, ChevronRight
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { AppSelect } from '@/components/ui/app-select';
 import { toast } from '@/hooks/use-toast';
 
 type Categoria = {
@@ -311,18 +312,15 @@ export default function Produtos() {
         <form onSubmit={add} className="flex flex-col gap-2">
           <div className="flex flex-col sm:flex-row gap-2">
             {/* Seleção de categoria */}
-            <select
+            <AppSelect
               value={catSelecionada}
-              onChange={(e) => onCategoriaChange(e.target.value)}
-              className="border border-input bg-background rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-rosa/40 sm:w-48"
-            >
-              <option value="">Sem categoria</option>
-              {categorias.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.nome} ({cat.prefixo})
-                </option>
-              ))}
-            </select>
+              onValueChange={onCategoriaChange}
+              options={[
+                { value: '', label: 'Sem categoria' },
+                ...categorias.map((cat) => ({ value: cat.id, label: `${cat.nome} (${cat.prefixo})` })),
+              ]}
+              className="sm:w-48"
+            />
 
             {/* SKU — pré-preenchido com prefixo da categoria */}
             <Input
@@ -534,18 +532,15 @@ function ProdutoRow({
             className="sm:w-28"
             placeholder="Preço"
           />
-          <select
+          <AppSelect
             value={editForm.categoria_id}
-            onChange={(e) => setEditForm({ ...editForm, categoria_id: e.target.value })}
-            className="border border-input bg-background rounded-md px-2 py-1.5 text-xs text-ink focus:outline-none focus:ring-2 focus:ring-rosa/40 sm:w-40"
-          >
-            <option value="">Sem categoria</option>
-            {categorias.map((cat) => (
-              <option key={cat.id} value={cat.id}>
-                {cat.nome}
-              </option>
-            ))}
-          </select>
+            onValueChange={(categoria_id) => setEditForm({ ...editForm, categoria_id })}
+            options={[
+              { value: '', label: 'Sem categoria' },
+              ...categorias.map((cat) => ({ value: cat.id, label: cat.nome })),
+            ]}
+            className="h-8 text-xs sm:w-40"
+          />
           <Button
             size="icon"
             className="h-8 w-8 bg-rosa hover:bg-rosa/90 shrink-0"

@@ -28,8 +28,9 @@ const TABLE = 'candidatas_revenda';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const MODALIDADE_VALUES = ['maleta_consignada', 'mostruario', 'tenho_duvidas'];
-const COMO_CONHECEU_VALUES = ['instagram_monare', 'indicacao_revendedora', 'indicacao_amiga', 'evento_feira', 'whatsapp_grupo', 'outra'];
+const COMO_CONHECEU_VALUES = ['instagram_monare', 'anuncio', 'indicacao_revendedora', 'indicacao_amiga', 'evento_feira', 'whatsapp_grupo', 'outra'];
 const CANAL_PRINCIPAL_VALUES = ['instagram', 'whatsapp', 'presencial', 'outro'];
+const ESTADO_CIVIL_VALUES = ['solteira', 'casada', 'uniao_estavel', 'divorciada', 'viuva'];
 
 function str(v: unknown, max = 500): string | null {
   if (typeof v !== 'string') return null;
@@ -234,7 +235,7 @@ async function enviarEventoMeta(
     event_name: eventName,
     event_time: Math.floor(Date.now() / 1000),
     user_data: hashedUserData,
-    custom_data,
+    custom_data: customData,
     action_source: 'website',
   };
 
@@ -318,24 +319,41 @@ function parseStep1(body: any) {
   };
 }
 
-// Etapa 2: dados pessoais (CPF, nascimento, e-mail)
+// Etapa 2: dados pessoais (CPF, nascimento, e-mail, estado civil, filhos)
 function parseStep2(body: any, required: boolean) {
   const errors: string[] = [];
 
   const cpf = body.cpf !== undefined ? isValidCPF(body.cpf) : null;
   const email = str(body.email, 254);
   const temNascimento = typeof body.data_nascimento === 'string' && body.data_nascimento !== '';
+  const estado_civil = str(body.estado_civil, 30);
+  const tem_filhos = str(body.tem_filhos, 10);
+  const filhos_qtd = typeof body.filhos_quantidade === 'string' && body.filhos_quantidade.trim() !== ''
+    ? parseInt(body.filhos_quantidade, 10)
+    : typeof body.filhos_quantidade === 'number'
+      ? body.filhos_quantidade
+      : null;
 
   if (body.cpf !== undefined && !cpf) errors.push('CPF inválido.');
   if (email && !EMAIL_RE.test(email)) errors.push('E-mail inválido.');
   if (temNascimento && !isAdult(body.data_nascimento)) {
     errors.push('É preciso ter 18 anos ou mais para se cadastrar.');
   }
+  if (estado_civil && !ESTADO_CIVIL_VALUES.includes(estado_civil)) errors.push('Estado civil inválido.');
+  if (tem_filhos && !['sim', 'nao'].includes(tem_filhos)) errors.push('Campo "possui filhos" inválido.');
+  if (tem_filhos === 'sim' && (filhos_qtd === null || isNaN(filhos_qtd) || filhos_qtd < 1 || filhos_qtd > 30)) {
+    errors.push('Quantidade de filhos inválida.');
+  }
 
   if (required) {
     if (!cpf) errors.push('CPF inválido.');
     if (!temNascimento) errors.push('Data de nascimento obrigatória.');
     if (!email) errors.push('E-mail inválido.');
+    if (!estado_civil) errors.push('Estado civil obrigatório.');
+    if (!tem_filhos) errors.push('É necessário informar se possui filhos.');
+    if (tem_filhos === 'sim' && (filhos_qtd === null || isNaN(filhos_qtd) || filhos_qtd < 1)) {
+      errors.push('Quantidade de filhos obrigatória.');
+    }
   }
 
   if (errors.length) return { errors: [...new Set(errors)] };
@@ -345,6 +363,9 @@ function parseStep2(body: any, required: boolean) {
       ...(cpf ? { cpf } : {}),
       ...(temNascimento ? { data_nascimento: body.data_nascimento } : {}),
       ...(email ? { email } : {}),
+      ...(estado_civil ? { estado_civil } : {}),
+      ...(tem_filhos ? { tem_filhos } : {}),
+      ...(tem_filhos === 'sim' && filhos_qtd !== null ? { filhos_quantidade: filhos_qtd } : {}),
     },
   };
 }
@@ -658,8 +679,21 @@ Deno.serve(async (req) => {
 
       if (existing && existing.status === 'CADASTRO_NAO_CONCLUIDO') {
         const { error } = await admin.from(TABLE).update(payload).eq('id', existing.id);
-        if (error) throw error;
-        await enviarEventoMeta('Lead', { ...userData, id: existing.id }, customData, clientInfo);
+        if (error) {
+          console.error('[reseller-registration] UPDATE falhou', {
+            id: existing.id,
+            message: error.message,
+            code: error.code,
+            details: error.details,
+            hint: error.hint,
+          });
+          throw error;
+        }
+        try {
+          await enviarEventoMeta('Lead', { ...userData, id: existing.id }, customData, clientInfo);
+        } catch (metaErr) {
+          console.error('[reseller-registration] enviarEventoMeta falhou (update)', metaErr);
+        }
         return jsonResponse({ id: existing.id, ok: true }, 200, headers);
       }
 
@@ -667,14 +701,33 @@ Deno.serve(async (req) => {
       // candidatura com o mesmo CPF): nunca sobrescreve — sempre cria uma linha nova
       // e deixa o admin resolver eventuais duplicatas por CPF manualmente.
       const { data: inserted, error } = await admin.from(TABLE).insert(payload).select('id').single();
-      if (error) throw error;
-      await enviarEventoMeta('Lead', { ...userData, id: inserted.id }, customData, clientInfo);
+      if (error) {
+        console.error('[reseller-registration] INSERT falhou', {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
+        });
+        throw error;
+      }
+      try {
+        await enviarEventoMeta('Lead', { ...userData, id: inserted.id }, customData, clientInfo);
+      } catch (metaErr) {
+        console.error('[reseller-registration] enviarEventoMeta falhou (insert)', metaErr);
+      }
       return jsonResponse({ id: inserted.id, ok: true }, 200, headers);
     }
 
     return jsonResponse({ error: 'Ação inválida' }, 400, headers);
   } catch (e: unknown) {
-    console.error('[reseller-registration]', e);
+    const err = e as Record<string, unknown>;
+    console.error('[reseller-registration] 500', {
+      message: err?.message ?? String(e),
+      code: err?.code,
+      details: err?.details,
+      hint: err?.hint,
+      stack: err?.stack,
+    });
     return jsonResponse({ error: 'Erro interno do servidor' }, 500, headers);
   }
 });

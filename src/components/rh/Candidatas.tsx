@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BadgeCheck, Loader2, MessageCircle, Search, UserPlus } from 'lucide-react';
+import { BadgeCheck, Loader2, MessageCircle, Search, UserPlus, FileSpreadsheet, FileText } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { AppSelect } from '@/components/ui/app-select';
+import { DatePickerInput } from '@/components/ui/date-picker-input';
 import { toast } from '@/hooks/use-toast';
+import { exportarExcel, exportarPDF } from '@/lib/exportarCandidatas';
 
 type Status = 'CADASTRO_NAO_CONCLUIDO' | 'pendente' | 'aprovada' | 'recusada' | 'contratada';
 
@@ -14,13 +18,21 @@ type CandidataRow = {
   data_nascimento: string | null;
   whatsapp: string | null;
   email: string | null;
+  endereco_cep: string | null;
   endereco_rua: string | null;
   endereco_numero: string | null;
+  endereco_complemento: string | null;
   endereco_bairro: string | null;
   endereco_cidade: string | null;
   endereco_estado: string | null;
+  canal_principal: string | null;
   instagram_handle: string | null;
   modalidade_interesse: string | null;
+  estado_civil: string | null;
+  tem_filhos: string | null;
+  filhos_quantidade: number | null;
+  como_conheceu: string | null;
+  como_conheceu_outra: string | null;
   motivo_escolha: string | null;
   sonho_realizacao: string | null;
   trabalha_atualmente: string | null;
@@ -47,6 +59,16 @@ const MOTIVOS_RECUSA = [
   'Já é revendedora de concorrente',
   'Não respondeu ao contato',
   'Outro',
+];
+
+const COMO_CONHECEU_OPTIONS = [
+  { value: 'instagram_monare', label: 'Instagram da marca' },
+  { value: 'anuncio', label: 'Anúncio' },
+  { value: 'indicacao_revendedora', label: 'Indicação revendedora' },
+  { value: 'indicacao_amiga', label: 'Indicação conhecido' },
+  { value: 'evento_feira', label: 'Evento ou feira' },
+  { value: 'whatsapp_grupo', label: 'WhatsApp / grupo' },
+  { value: 'outra', label: 'Outra' },
 ];
 
 // Espelha STEP_LABELS de src/pages/CadastroRevendedora.tsx: etapa_atual guarda
@@ -115,6 +137,10 @@ export default function Candidatas() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('pendente');
   const [search, setSearch] = useState('');
+  const [dataInicio, setDataInicio] = useState('');
+  const [dataFim, setDataFim] = useState('');
+  const [canalFilter, setCanalFilter] = useState('todos');
+  const [comoConheceuFilter, setComoConheceuFilter] = useState('todos');
 
   async function load() {
     setLoading(true);
@@ -163,6 +189,20 @@ export default function Candidatas() {
       list = rows.filter((c) => (c.status || 'pendente') === filter);
     }
     list = list.filter(matchesSearch);
+    if (canalFilter && canalFilter !== 'todos') {
+      list = list.filter((c) => c.canal_principal === canalFilter);
+    }
+    if (comoConheceuFilter !== 'todos') {
+      list = list.filter((c) => c.como_conheceu === comoConheceuFilter);
+    }
+    if (dataInicio) {
+      const start = new Date(dataInicio + 'T00:00:00').getTime();
+      list = list.filter((c) => new Date(c.created_at).getTime() >= start);
+    }
+    if (dataFim) {
+      const end = new Date(dataFim + 'T23:59:59').getTime();
+      list = list.filter((c) => new Date(c.created_at).getTime() <= end);
+    }
     return [...list].sort((a, b) => {
       const ra = a.avaliacao_manual === null || a.avaliacao_manual === undefined ? -1 : a.avaliacao_manual;
       const rb = b.avaliacao_manual === null || b.avaliacao_manual === undefined ? -1 : b.avaliacao_manual;
@@ -170,7 +210,7 @@ export default function Candidatas() {
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, filter, search, dupIds]);
+  }, [rows, filter, search, dupIds, canalFilter, comoConheceuFilter, dataInicio, dataFim]);
 
   async function updateRating(id: string, value: number) {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, avaliacao_manual: value } : r)));
@@ -272,6 +312,70 @@ export default function Candidatas() {
           placeholder="Buscar por nome, CPF ou WhatsApp..."
           className="w-full pl-9 pr-3 h-10 text-sm border border-border rounded-md bg-white placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         />
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3 p-4 rounded-xl border border-border bg-bege-light">
+        <div>
+          <label className="block text-[11px] uppercase tracking-wide text-ink-soft mb-1">Período</label>
+          <div className="flex items-center gap-2">
+            <DatePickerInput value={dataInicio} onValueChange={setDataInicio} className="h-9 w-40" />
+            <span className="text-ink-soft text-xs">a</span>
+            <DatePickerInput value={dataFim} onValueChange={setDataFim} className="h-9 w-40" />
+          </div>
+        </div>
+        <div>
+          <label className="block text-[11px] uppercase tracking-wide text-ink-soft mb-1">Canal</label>
+          <Select value={canalFilter} onValueChange={setCanalFilter}>
+            <SelectTrigger className="h-9 min-w-36 rounded-xl border-border bg-white px-3 shadow-sm focus:ring-rosa/30">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl border-border">
+              <SelectItem value="todos" className="rounded-lg">Todos</SelectItem>
+              <SelectItem value="instagram" className="rounded-lg">Instagram</SelectItem>
+              <SelectItem value="whatsapp" className="rounded-lg">WhatsApp</SelectItem>
+              <SelectItem value="presencial" className="rounded-lg">Presencial</SelectItem>
+              <SelectItem value="outro" className="rounded-lg">Outro</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <label className="block text-[11px] uppercase tracking-wide text-ink-soft mb-1">Como conheceu a empresa</label>
+          <Select value={comoConheceuFilter} onValueChange={setComoConheceuFilter}>
+            <SelectTrigger className="h-9 min-w-56 rounded-xl border-border bg-white px-3 shadow-sm focus:ring-rosa/30">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl border-border">
+              <SelectItem value="todos" className="rounded-lg">Todos</SelectItem>
+              {COMO_CONHECEU_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value} className="rounded-lg">
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-end gap-2 ml-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => exportarExcel(filtered, canalFilter, dataInicio, dataFim)}
+            disabled={filtered.length === 0}
+            className="gap-1.5"
+          >
+            <FileSpreadsheet size={14} />
+            Excel
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => exportarPDF(filtered, canalFilter, dataInicio, dataFim)}
+            disabled={filtered.length === 0}
+            className="gap-1.5"
+          >
+            <FileText size={14} />
+            PDF
+          </Button>
+        </div>
       </div>
 
       {filtered.length === 0 ? (
@@ -504,6 +608,20 @@ function CandidataCard({
             <dd className="text-ink">{c.modalidade_interesse || '—'}</dd>
           </div>
           <div>
+            <dt className="text-[11px] uppercase tracking-wide text-rosa">Estado civil</dt>
+            <dd className="text-ink">{c.estado_civil || '—'}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] uppercase tracking-wide text-rosa">Filhos</dt>
+            <dd className="text-ink">
+              {c.tem_filhos === 'sim'
+                ? `Sim, ${c.filhos_quantidade ?? '—'} ${c.filhos_quantidade === 1 ? 'filho' : 'filhos'}`
+                : c.tem_filhos === 'nao'
+                  ? 'Não'
+                  : '—'}
+            </dd>
+          </div>
+          <div>
             <dt className="text-[11px] uppercase tracking-wide text-rosa">Trabalha atualmente?</dt>
             <dd className="text-ink">{c.trabalha_atualmente || '—'}</dd>
           </div>
@@ -592,14 +710,11 @@ function CandidataCard({
               placeholder="Senha inicial (mín. 6)"
               className="bg-white"
             />
-            <select
+            <AppSelect
               value={contrato.role}
-              onChange={(e) => setContrato({ ...contrato, role: e.target.value })}
-              className="h-10 rounded-md border border-input bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <option value="revendedora">Revendedora</option>
-              <option value="b2b">B2B</option>
-            </select>
+              onValueChange={(role) => setContrato({ ...contrato, role })}
+              options={[{ value: 'revendedora', label: 'Revendedora' }, { value: 'b2b', label: 'B2B' }]}
+            />
           </div>
           <div className="flex gap-2">
             <Button size="sm" className="bg-rosa hover:bg-rosa/90" disabled={hiring} onClick={confirmarContratacao}>
@@ -616,18 +731,12 @@ function CandidataCard({
       {showReject && (
         <div className="mt-4 p-4 rounded-xl border border-border bg-bege-light">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-rosa mb-2.5">Motivo da recusa</p>
-          <select
+          <AppSelect
             value={motivo}
-            onChange={(e) => setMotivo(e.target.value)}
-            className="w-full h-10 rounded-md border border-input bg-white px-3 text-sm mb-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="">Selecione um motivo...</option>
-            {MOTIVOS_RECUSA.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
+            onValueChange={setMotivo}
+            options={[{ value: '', label: 'Selecione um motivo...' }, ...MOTIVOS_RECUSA.map((m) => ({ value: m, label: m }))]}
+            className="mb-3 w-full"
+          />
           <input
             type="text"
             value={motivoOutro}

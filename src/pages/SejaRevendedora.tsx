@@ -14,7 +14,7 @@ import FaqSection from '@/components/landing/FaqSection';
 import WhatsAppFloat from '@/components/landing/WhatsAppFloat';
 import usePageMeta from '@/hooks/usePageMeta';
 import useScrollDepth from '@/hooks/useScrollDepth';
-import { track, EVENTS } from '@/lib/analytics';
+import { captureAttribution, track, EVENTS } from '@/lib/analytics';
 
 /**
  * Landing institucional, servida na raiz do domínio. O formulário de inscrição
@@ -30,6 +30,7 @@ export default function SejaRevendedora() {
   useScrollDepth('seja-representante');
 
   useEffect(() => {
+    captureAttribution();
     track(EVENTS.landingView, { pagina: 'seja-representante' });
     window.fbq?.('track', 'ViewContent', {
       content_name: 'Landing Representante',

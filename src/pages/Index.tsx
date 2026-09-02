@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { LogOut, Settings, Users } from 'lucide-react';
+import { Banknote, LogOut, Users } from 'lucide-react';
 import SaleRegistrationForm from '@/components/SaleRegistrationForm';
 import EstoqueSidebar from '@/components/EstoqueSidebar';
 import Dashboard from '@/components/Dashboard';
@@ -22,8 +22,8 @@ const Index = () => {
         <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
           {isAdmin && (
             <Link to={ADMIN_PATH} className={atalhoClass}>
-              <Settings size={13} />
-              Painel Admin
+              <Banknote size={13} />
+              Comercial
             </Link>
           )}
           {(isAdmin || isRh) && (

@@ -6,6 +6,7 @@ import SuccessModal from "@/components/SuccessModal";
 import { formatWhatsApp, getToday, getMinDate } from "@/lib/monare";
 import { gerarCertificadoPDF } from "@/lib/gerarCertificadoPDF";
 import { X } from "lucide-react";
+import { DatePickerInput } from "@/components/ui/date-picker-input";
 
 // Código único por peça: timestamp em base36 + sufixo aleatório.
 // O sufixo evita colisão com o UNIQUE de vendas.codigo_garantia quando duas
@@ -627,13 +628,12 @@ export function SaleRegistrationForm({ externalSku, onSkuConsumed }: Props) {
             <label className="block text-[10px] tracking-[0.25em] text-[#9B8E7E] uppercase">
               Data da venda
             </label>
-            <input
-              type="date"
+            <DatePickerInput
               value={form.data_venda}
               min={getMinDate()}
               max={getToday()}
-              onChange={(e) => setForm((prev) => ({ ...prev, data_venda: e.target.value }))}
-              className="w-full border-b border-[#D4CCBF] bg-transparent py-2.5 text-[#2C2825] text-sm tracking-wide focus:outline-none focus:border-[#C9A96E] transition-colors"
+              onValueChange={(value) => setForm((prev) => ({ ...prev, data_venda: value }))}
+              className="w-full border-[#D4CCBF] bg-transparent text-[#2C2825] tracking-wide hover:bg-transparent"
             />
             <p className="text-[10px] text-[#B5A99A] tracking-wide">
               Máximo 3 dias anteriores à data atual.
