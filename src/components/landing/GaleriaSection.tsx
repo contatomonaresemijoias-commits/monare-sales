@@ -66,9 +66,10 @@ export default function GaleriaSection() {
           <CarouselContent className="-ml-5">
             {GALERIA_IMAGES.map((image) => (
               // 3,5 slides por tela (100%/3,5): as 3 fotos inteiras + metade da
-              // próxima. No celular o trio inteiro esmagaria as fotos, então
-              // entram ~2,5 — mantendo a mesma "espiadinha" do próximo.
-              <CarouselItem key={image.fileName} className="basis-[40%] pl-5 sm:basis-[calc(100%/3.5)]">
+              // próxima. No celular cada foto ocupa ~65% da largura, ficando
+              // grande o bastante para ver detalhes — com a "espiadinha" do
+              // próximo ao lado.
+              <CarouselItem key={image.fileName} className="basis-[65%] pl-5 sm:basis-[calc(100%/3.5)]">
                 <ImageSlot image={image} className="aspect-[1/1.1] w-full rounded-[10px]" />
               </CarouselItem>
             ))}

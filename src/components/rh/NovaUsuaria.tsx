@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { AppSelect } from '@/components/ui/app-select';
 
 const VAZIO = { nome: '', email: '', senha: '', telefone: '', role: 'revendedora' };
 
@@ -83,17 +84,16 @@ export default function NovaUsuaria({ onCriada }: { onCriada?: () => void }) {
         />
         <div className="flex items-center gap-2 sm:col-span-2">
           <label className="text-xs text-ink-soft uppercase tracking-wider whitespace-nowrap">Tipo</label>
-          <select
+          <AppSelect
             value={form.role}
-            onChange={(e) => setForm({ ...form, role: e.target.value })}
-            className="flex-1 h-9 rounded-md border border-input bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="revendedora">Revendedora</option>
-            <option value="b2b">B2B</option>
-            {/* Só a administração cria conta de RH — se o próprio RH pudesse,
-                fabricaria pares para contornar o bloqueio entre iguais. */}
-            {isAdmin && <option value="rh">RH</option>}
-          </select>
+            onValueChange={(role) => setForm({ ...form, role })}
+            options={[
+              { value: 'revendedora', label: 'Revendedora' },
+              { value: 'b2b', label: 'B2B' },
+              ...(isAdmin ? [{ value: 'rh', label: 'RH' }] : []),
+            ]}
+            className="h-9 flex-1"
+          />
         </div>
         <Button type="submit" disabled={busy} className="bg-rosa hover:bg-rosa/90 sm:col-span-2">
           {busy ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}

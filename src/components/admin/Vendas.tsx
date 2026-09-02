@@ -3,7 +3,7 @@ import { Loader2, FileText, Wallet, CheckCheck, Search, X, Share2, Download, Sho
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
-import { formatDateBR, statusComissao, MINIMO_VENDAS_SAQUE } from '@/lib/monare';
+import { formatDateBR, addDaysISO, statusComissao, MINIMO_VENDAS_SAQUE } from '@/lib/monare';
 
 async function compartilharPDFAdmin(url: string, sku: string) {
   const response = await fetch(url);
@@ -55,11 +55,15 @@ const DIAS_CICLO = 30;
 const fmt = (n: number | null | undefined) =>
   (n ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-function acertoDe(s: Saldo | undefined): Date | null {
+function acertoDe(s: Saldo | undefined): string | null {
   if (!s?.aberto_em) return null;
-  const d = new Date(s.aberto_em);
-  d.setDate(d.getDate() + DIAS_CICLO);
-  return d;
+  const iso = s.aberto_em.includes('T') ? s.aberto_em.split('T')[0] : s.aberto_em;
+  return addDaysISO(iso, DIAS_CICLO);
+}
+
+function acertoTimestamp(iso: string): number {
+  const [y, m, d] = iso.split('-').map(Number);
+  return Date.UTC(y, m - 1, d);
 }
 
 function urgencia(s: Saldo | undefined): 'vencido' | 'proximo' | 'ok' | 'sem-saldo' {
@@ -67,7 +71,7 @@ function urgencia(s: Saldo | undefined): 'vencido' | 'proximo' | 'ok' | 'sem-sal
   if (!s || qtd === 0) return 'sem-saldo';
   const acerto = acertoDe(s);
   if (!acerto) return 'ok';
-  const diff = Math.floor((acerto.getTime() - Date.now()) / 86_400_000);
+  const diff = Math.floor((acertoTimestamp(acerto) - Date.now()) / 86_400_000);
   if (diff < 0) return 'vencido';
   if (diff <= 7) return 'proximo';
   return 'ok';
@@ -75,8 +79,8 @@ function urgencia(s: Saldo | undefined): 'vencido' | 'proximo' | 'ok' | 'sem-sal
 
 function sortPorAcerto(lista: Usuario[], saldos: Record<string, Saldo>): Usuario[] {
   return [...lista].sort((a, b) => {
-    const da = acertoDe(saldos[a.user_id])?.getTime() ?? Infinity;
-    const db = acertoDe(saldos[b.user_id])?.getTime() ?? Infinity;
+    const da = acertoDe(saldos[a.user_id]) ? acertoTimestamp(acertoDe(saldos[a.user_id])!) : Infinity;
+    const db = acertoDe(saldos[b.user_id]) ? acertoTimestamp(acertoDe(saldos[b.user_id])!) : Infinity;
     return da - db;
   });
 }
@@ -122,16 +126,16 @@ function SaldoCard({
   fechando: string | null;
   fecharCiclo: (u: Usuario) => void;
 }) {
-  const aberto = s?.aberto_em ? new Date(s.aberto_em).toLocaleDateString('pt-BR') : '—';
+  const aberto = s?.aberto_em ? formatDateBR(s.aberto_em) : '—';
   const acerto = acertoDe(s);
-  const acertoFmt = acerto ? acerto.toLocaleDateString('pt-BR') : '—';
+  const acertoFmt = acerto ? formatDateBR(acerto) : '—';
   const urg = urgencia(s);
   const qtdVendidas = Number(s?.qtd_vendas ?? 0);
   const pct = s?.comissao_percentual ?? 0;
   const saque = statusComissao(s?.total_vendas);
 
   const diffDias = acerto
-    ? Math.floor((acerto.getTime() - Date.now()) / 86_400_000)
+    ? Math.floor((acertoTimestamp(acerto) - Date.now()) / 86_400_000)
     : null;
 
   const bordaClass =

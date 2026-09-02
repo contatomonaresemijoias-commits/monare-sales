@@ -20,11 +20,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import SkuCombobox from '@/components/SkuCombobox';
+import { DatePickerInput } from '@/components/ui/date-picker-input';
 import { toast } from '@/hooks/use-toast';
 import {
   generateWarrantyCode,
   formatWhatsApp,
   getToday,
+  addDaysISO,
   getWarrantyExpiryISO,
   formatDateBR,
 } from '@/lib/monare';
@@ -612,7 +614,7 @@ export default function Mostruario() {
     if (!selectedUserId) return;
     setEntregando(true);
 
-    const hoje = new Date().toISOString();
+    const hoje = getToday();
 
     const { data: ciclo, error: errBusca } = await supabase
       .from('ciclos_mostruario')
@@ -647,12 +649,11 @@ export default function Mostruario() {
       return;
     }
 
-    const dataAcerto = new Date();
-    dataAcerto.setDate(dataAcerto.getDate() + 30);
+    const dataAcerto = formatDateBR(addDaysISO(hoje, 30));
 
     toast({
       title: 'Maleta entregue!',
-      description: `Data do acerto: ${dataAcerto.toLocaleDateString('pt-BR')}`,
+      description: `Data do acerto: ${dataAcerto}`,
     });
 
     setConfirmarEntrega(false);
@@ -699,11 +700,7 @@ export default function Mostruario() {
 
   const selectedUsuario = usuarios.find((u) => u.user_id === selectedUserId);
 
-  const dataAcertoPreview = (() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 30);
-    return d.toLocaleDateString('pt-BR');
-  })();
+  const dataAcertoPreview = formatDateBR(addDaysISO(getToday(), 30));
 
   const totalEstoque = estoque.reduce((s, e) => s + e.quantidade, 0);
 
@@ -1328,12 +1325,11 @@ export default function Mostruario() {
                       required
                     />
                   </div>
-                  <Input
-                    type="date"
+                  <DatePickerInput
                     value={vendaForm.data_venda}
-                    onChange={(e) => setVendaForm({ ...vendaForm, data_venda: e.target.value })}
+                    onValueChange={(value) => setVendaForm({ ...vendaForm, data_venda: value })}
                     max={getToday()}
-                    required
+                    className="w-full"
                   />
                   <Button type="submit" disabled={vendendo} className="w-full bg-rosa hover:bg-rosa/90">
                     {vendendo ? <Loader2 size={14} className="animate-spin" /> : <ShoppingBag size={14} className="mr-2" />}

@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { formatWhatsApp } from '@/lib/monare';
 import { isValidCPF, maskCPF, isAdult, isValidEmail, isValidWhatsApp, maskCEP, fetchAddressByCEP } from '@/lib/validacao';
 import { PRAZO_RETORNO } from '@/content/landing';
-import { track, EVENTS } from '@/lib/analytics';
+import { captureAttribution, getAttribution, track, EVENTS } from '@/lib/analytics';
 import { edgeErro } from '@/lib/edgeErro';
 import { podeAvancarEtapa1 } from '@/lib/turnstile';
 import usePageMeta from '@/hooks/usePageMeta';
@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
+import { DatePickerInput } from '@/components/ui/date-picker-input';
 
 const MODALIDADE_OPTIONS = [
   { value: 'maleta_consignada', label: 'Maleta consignada (recebe peças, repassa conforme venda)' },
@@ -23,11 +24,20 @@ const MODALIDADE_OPTIONS = [
 
 const COMO_CONHECEU_OPTIONS = [
   { value: 'instagram_monare', label: 'Instagram da marca' },
+  { value: 'anuncio', label: 'Anúncio' },
   { value: 'indicacao_revendedora', label: 'Indicação de outra revendedora' },
   { value: 'indicacao_amiga', label: 'Indicação de uma amiga / conhecido' },
   { value: 'evento_feira', label: 'Evento ou feira' },
   { value: 'whatsapp_grupo', label: 'WhatsApp / grupo' },
   { value: 'outra', label: 'Outra' },
+];
+
+const ESTADO_CIVIL_OPTIONS = [
+  { value: 'solteira', label: 'Solteira' },
+  { value: 'casada', label: 'Casada' },
+  { value: 'uniao_estavel', label: 'União estável' },
+  { value: 'divorciada', label: 'Divorciada' },
+  { value: 'viuva', label: 'Viúva' },
 ];
 
 const CANAL_OPTIONS = [
@@ -47,12 +57,41 @@ const STEP_LABELS = ['Contato', 'Seus dados', 'Endereço', 'Perfil comercial', '
 const ULTIMA_ETAPA = STEP_LABELS.length - 1;
 const DRAFT_STORAGE_KEY = 'monare_seja_revendedora_draft';
 
+const ANALYTICS_STEPS = [
+  'contato',
+  'aceite_termos',
+  'dados_pessoais',
+  'perfil_familiar',
+  'endereco',
+  'instagram',
+  'modalidade',
+  'origem',
+  'ocupacao',
+  'experiencia_vendas',
+  'detalhe_experiencia',
+  'restricao_cpf',
+  'motivo_escolha',
+  'sonho_realizacao',
+  'consentimento_lgpd',
+] as const;
+
+const ANALYTICS_STEPS_BY_SCREEN: Record<number, number[]> = {
+  0: [2, 3],
+  1: [4, 5],
+  2: [6],
+  3: [7, 8, 9, 10, 11, 12],
+  4: [13, 14, 15, 16],
+};
+
 type FormData = {
   nome_completo: string;
   cpf: string;
   data_nascimento: string;
-  whatsapp: string;
   email: string;
+  estado_civil: string;
+  tem_filhos: string;
+  filhos_quantidade: string;
+  whatsapp: string;
   terms_accept: boolean;
   endereco_cep: string;
   endereco_rua: string;
@@ -79,8 +118,11 @@ const FORM_INICIAL: FormData = {
   nome_completo: '',
   cpf: '',
   data_nascimento: '',
-  whatsapp: '',
   email: '',
+  estado_civil: '',
+  tem_filhos: '',
+  filhos_quantidade: '',
+  whatsapp: '',
   terms_accept: false,
   endereco_cep: '',
   endereco_rua: '',
@@ -156,6 +198,7 @@ export default function CadastroRevendedora() {
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
   const cepAbortRef = useRef<AbortController | null>(null);
+  const trackedStepsRef = useRef(new Set<number>());
 
   usePageMeta({
     title: 'Cadastro de representante — Monarê Semijoias',
@@ -163,8 +206,20 @@ export default function CadastroRevendedora() {
   });
 
   useEffect(() => {
+    captureAttribution();
     track(EVENTS.cadastroView, {});
   }, []);
+
+  function trackCompletedSteps(screen: number) {
+    (ANALYTICS_STEPS_BY_SCREEN[screen] || []).forEach((analyticsStep) => {
+      if (trackedStepsRef.current.has(analyticsStep)) return;
+      trackedStepsRef.current.add(analyticsStep);
+      track(`step_${analyticsStep}_completo`, {
+        etapa: analyticsStep,
+        marco: ANALYTICS_STEPS[analyticsStep - 2],
+      });
+    });
+  }
 
   function set<K extends keyof FormData>(key: K, value: FormData[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -211,6 +266,9 @@ export default function CadastroRevendedora() {
       if (!isValidCPF(form.cpf)) return 'Este CPF não é válido. Confira os números digitados.';
       if (!isAdult(form.data_nascimento)) return 'É preciso ter 18 anos ou mais para se cadastrar.';
       if (!isValidEmail(form.email)) return 'Digite um e-mail válido (exemplo: nome@email.com).';
+      if (!form.estado_civil) return 'Selecione seu estado civil.';
+      if (!form.tem_filhos) return 'Informe se você possui filhos.';
+      if (form.tem_filhos === 'sim' && (!form.filhos_quantidade.trim() || isNaN(Number(form.filhos_quantidade)) || Number(form.filhos_quantidade) < 1)) return 'Informe a quantidade de filhos.';
       return null;
     }
     if (current === 2) {
@@ -282,6 +340,9 @@ export default function CadastroRevendedora() {
           cpf: form.cpf,
           data_nascimento: form.data_nascimento,
           email: form.email,
+          estado_civil: form.estado_civil,
+          tem_filhos: form.tem_filhos,
+          filhos_quantidade: form.tem_filhos === 'sim' ? form.filhos_quantidade : null,
         });
       } else if (step === 2) {
         await invoke({
@@ -311,7 +372,7 @@ export default function CadastroRevendedora() {
           experiencia_vendas_detalhe: form.experiencia_vendas_detalhe,
         });
       }
-      track(EVENTS.cadastroEtapa, { etapa: step + 1, nome: STEP_LABELS[step] });
+      trackCompletedSteps(step);
       setStep((s) => s + 1);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: unknown) {
@@ -356,6 +417,9 @@ export default function CadastroRevendedora() {
         data_nascimento: form.data_nascimento,
         whatsapp: form.whatsapp,
         email: form.email,
+        estado_civil: form.estado_civil,
+        tem_filhos: form.tem_filhos,
+        filhos_quantidade: form.tem_filhos === 'sim' ? form.filhos_quantidade : null,
         terms_accept: form.terms_accept,
         endereco_cep: form.endereco_cep,
         endereco_rua: form.endereco_rua,
@@ -381,7 +445,12 @@ export default function CadastroRevendedora() {
         page_url: window.location.href,
       });
       clearDraft();
-      track(EVENTS.cadastroEnviado, { canal: form.canal_principal || null, modalidade: form.modalidade_interesse });
+      trackCompletedSteps(ULTIMA_ETAPA);
+      track(EVENTS.cadastroEnviado, {
+        ...getAttribution(),
+        canal: form.canal_principal || null,
+        modalidade: form.modalidade_interesse,
+      });
       window.fbq?.('track', 'Lead', {
         content_name: 'Cadastro Representante',
         content_category: form.modalidade_interesse,
@@ -547,11 +616,11 @@ export default function CadastroRevendedora() {
                             Data de nascimento <span className="text-rosa">*</span>
                           </label>
                           <p className="text-xs text-ink-soft -mt-1 mb-2">É preciso ter 18 anos ou mais para se cadastrar</p>
-                          <Input
-                            type="date"
+                          <DatePickerInput
                             className={inputBase}
                             value={form.data_nascimento}
-                            onChange={(e) => set('data_nascimento', e.target.value)}
+                            onValueChange={(value) => set('data_nascimento', value)}
+                            max={new Date().toISOString().slice(0, 10)}
                           />
                         </div>
                         <div>
@@ -565,6 +634,35 @@ export default function CadastroRevendedora() {
                             onChange={(e) => set('email', e.target.value)}
                             placeholder="voce@exemplo.com"
                           />
+                        </div>
+                        <div>
+                          <label className={labelBase}>
+                            Estado civil <span className="text-rosa">*</span>
+                          </label>
+                          <RadioGroup value={form.estado_civil} onValueChange={(v) => set('estado_civil', v)} className="gap-2.5">
+                            {ESTADO_CIVIL_OPTIONS.map((o) => (
+                              <OptionCard key={o.value} value={o.value} label={o.label} selected={form.estado_civil === o.value} />
+                            ))}
+                          </RadioGroup>
+                        </div>
+                        <div>
+                          <label className={labelBase}>
+                            Possui filhos? <span className="text-rosa">*</span>
+                          </label>
+                          <RadioGroup value={form.tem_filhos} onValueChange={(v) => set('tem_filhos', v)} className="flex flex-row gap-3">
+                            <OptionCard value="sim" label="Sim" selected={form.tem_filhos === 'sim'} />
+                            <OptionCard value="nao" label="Não" selected={form.tem_filhos === 'nao'} />
+                          </RadioGroup>
+                          {form.tem_filhos === 'sim' && (
+                            <Input
+                              type="number"
+                              min={1}
+                              className={`${inputBase} mt-3`}
+                              value={form.filhos_quantidade}
+                              onChange={(e) => set('filhos_quantidade', e.target.value)}
+                              placeholder="Quantos?"
+                            />
+                          )}
                         </div>
                       </div>
                     )}

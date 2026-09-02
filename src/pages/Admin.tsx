@@ -1,11 +1,12 @@
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Package, Boxes, UserCog, Receipt, Users } from 'lucide-react';
+import { ArrowLeft, Package, Boxes, UserCog, Receipt, Users, BarChart3 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Mostruario from '@/components/admin/Mostruario';
 import Produtos from '@/components/admin/Produtos';
 import Vendedoras from '@/components/admin/Vendedoras';
 import Vendas from '@/components/admin/Vendas';
 import Clientes from '@/components/admin/Clientes';
+import VendasRelatorio from '@/components/admin/VendasRelatorio';
 import { RH_PATH } from '@/lib/acesso';
 import { PAINEL_PATH } from '@/content/landing';
 
@@ -46,7 +47,7 @@ export default function Admin() {
 
       <div className="max-w-5xl mx-auto px-3 sm:px-5">
         <Tabs defaultValue="mostruario" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 sm:grid-cols-5 h-auto gap-1 bg-white/70 border border-bege p-1">
+          <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 h-auto gap-1 bg-white/70 border border-bege p-1">
             <TabsTrigger value="mostruario" className={tabTriggerClass}>
               <Boxes size={14} className="sm:mr-1.5" />
               Estoque
@@ -62,6 +63,10 @@ export default function Admin() {
             <TabsTrigger value="vendas" className={tabTriggerClass}>
               <Receipt size={14} className="sm:mr-1.5" />
               Vendas
+            </TabsTrigger>
+            <TabsTrigger value="relatorio" className={tabTriggerClass}>
+              <BarChart3 size={14} className="sm:mr-1.5" />
+              Relatório
             </TabsTrigger>
             <TabsTrigger value="produtos" className={tabTriggerClass}>
               <Package size={14} className="sm:mr-1.5" />
@@ -80,6 +85,9 @@ export default function Admin() {
           </TabsContent>
           <TabsContent value="vendas" className="mt-6">
             <Vendas />
+          </TabsContent>
+          <TabsContent value="relatorio" className="mt-6">
+            <VendasRelatorio />
           </TabsContent>
           <TabsContent value="produtos" className="mt-6">
             <Produtos />

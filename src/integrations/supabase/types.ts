@@ -33,8 +33,10 @@ export type Database = {
           endereco_numero: string | null
           endereco_rua: string | null
           etapa_atual: number
+          estado_civil: string | null
           experiencia_vendas: string | null
           experiencia_vendas_detalhe: string | null
+          filhos_quantidade: number | null
           id: string
           instagram_handle: string | null
           lgpd_consent: boolean
@@ -45,6 +47,7 @@ export type Database = {
           restricao_cpf: string | null
           sonho_realizacao: string | null
           status: Database["public"]["Enums"]["candidatura_status"]
+          tem_filhos: string | null
           trabalha_atualmente: string | null
           updated_at: string
           user_id: string | null
@@ -68,8 +71,10 @@ export type Database = {
           endereco_numero?: string | null
           endereco_rua?: string | null
           etapa_atual?: number
+          estado_civil?: string | null
           experiencia_vendas?: string | null
           experiencia_vendas_detalhe?: string | null
+          filhos_quantidade?: number | null
           id?: string
           instagram_handle?: string | null
           lgpd_consent?: boolean
@@ -80,6 +85,7 @@ export type Database = {
           restricao_cpf?: string | null
           sonho_realizacao?: string | null
           status?: Database["public"]["Enums"]["candidatura_status"]
+          tem_filhos?: string | null
           trabalha_atualmente?: string | null
           updated_at?: string
           user_id?: string | null
@@ -103,8 +109,10 @@ export type Database = {
           endereco_numero?: string | null
           endereco_rua?: string | null
           etapa_atual?: number
+          estado_civil?: string | null
           experiencia_vendas?: string | null
           experiencia_vendas_detalhe?: string | null
+          filhos_quantidade?: number | null
           id?: string
           instagram_handle?: string | null
           lgpd_consent?: boolean
@@ -115,6 +123,7 @@ export type Database = {
           restricao_cpf?: string | null
           sonho_realizacao?: string | null
           status?: Database["public"]["Enums"]["candidatura_status"]
+          tem_filhos?: string | null
           trabalha_atualmente?: string | null
           updated_at?: string
           user_id?: string | null

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Loader2, TrendingUp, Wallet, ClipboardList, FileText, CheckCircle2, Sparkles } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { formatDateBR, statusComissao, MINIMO_VENDAS_SAQUE } from '@/lib/monare';
+import { formatDateBR, addDaysISO, statusComissao, MINIMO_VENDAS_SAQUE } from '@/lib/monare';
 
 type Saldo = {
   ciclo_id: string;
@@ -100,8 +100,8 @@ export default function Dashboard() {
     );
   }
 
-  const acertoDate = saldo?.aberto_em
-    ? new Date(new Date(saldo.aberto_em).getTime() + 30 * 86_400_000)
+  const acertoFmt = saldo?.aberto_em
+    ? formatDateBR(addDaysISO(saldo.aberto_em.includes('T') ? saldo.aberto_em.split('T')[0] : saldo.aberto_em, 30))
     : null;
 
   const pct = saldo && saldo.total_vendas > 0
@@ -170,11 +170,11 @@ export default function Dashboard() {
           </div>
         )}
 
-        {acertoDate && (
+        {acertoFmt && (
           <p className="text-[11px] text-[#9B8E7E] text-center border-t border-[#E8DDD0] pt-3">
             Próximo acerto:{' '}
             <span className="font-medium text-[#2C2825]">
-              {acertoDate.toLocaleDateString('pt-BR')}
+              {acertoFmt}
             </span>
           </p>
         )}

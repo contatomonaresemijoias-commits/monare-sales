@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ArrowLeft, BarChart3, ClipboardList, LogOut, Settings, Users } from 'lucide-react';
+import { ArrowLeft, Banknote, BarChart3, ClipboardList, LogOut, Users } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Candidatas from '@/components/rh/Candidatas';
 import CandidatasRelatorio from '@/components/rh/CandidatasRelatorio';
@@ -42,10 +42,11 @@ export default function Rh() {
           {isAdmin && (
             <Link
               to={ADMIN_PATH}
-              className="hidden sm:inline-flex items-center gap-1.5 text-ink-soft hover:text-rosa text-xs transition-colors"
+              className="inline-flex items-center gap-1.5 text-ink-soft hover:text-rosa text-xs transition-colors"
               title="Painel comercial"
             >
-              <Settings size={14} />
+              <Banknote size={14} />
+              <span>Comercial</span>
             </Link>
           )}
           <button

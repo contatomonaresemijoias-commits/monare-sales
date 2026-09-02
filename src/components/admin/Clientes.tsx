@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import { formatWhatsApp, formatDateBR } from '@/lib/monare';
+import { AppSelect } from '@/components/ui/app-select';
 
 type Usuario = { user_id: string; display_name: string | null };
 
@@ -183,16 +184,15 @@ export default function Clientes() {
                   <td className="px-4 py-3">
                     {editandoCliente === c.id ? (
                       <div ref={editRef} className="flex items-center gap-2">
-                        <select
+                        <AppSelect
                           value={novoUsuario}
-                          onChange={(e) => setNovoUsuario(e.target.value)}
-                          className="text-xs border border-bege rounded px-2 py-1 bg-white focus:outline-none focus:border-rosa"
-                        >
-                          <option value="">— sem revendedora —</option>
-                          {usuarios.map((u) => (
-                            <option key={u.user_id} value={u.user_id}>{u.display_name ?? u.user_id}</option>
-                          ))}
-                        </select>
+                          onValueChange={setNovoUsuario}
+                          options={[
+                            { value: '', label: '— sem revendedora —' },
+                            ...usuarios.map((u) => ({ value: u.user_id, label: u.display_name ?? u.user_id })),
+                          ]}
+                          className="h-8 min-w-44 text-xs"
+                        />
                         <Button
                           size="sm"
                           variant="outline"
