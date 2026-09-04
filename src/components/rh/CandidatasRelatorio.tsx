@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, ChevronLeft, ChevronRight, Printer, FileSpreadsheet } from 'lucide-react';
+import { Loader2, Printer, FileSpreadsheet } from 'lucide-react';
 import {
   ResponsiveContainer,
   PieChart,
@@ -18,6 +18,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { DatePickerInput } from '@/components/ui/date-picker-input';
+import { MonthYearSelect } from '@/components/ui/month-year-select';
 import { exportarRelatorioExcel, type CandidataRelatorioRow } from '@/lib/exportarCandidatas';
 
 type CandidataRow = {
@@ -256,20 +257,7 @@ export default function CandidatasRelatorio() {
         </div>
 
         {periodMode === 'mes' ? (
-          <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-rosa">Mês selecionado</span>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setMonthDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))} className="text-rosa hover:text-ink p-1">
-                <ChevronLeft size={16} />
-              </button>
-              <span className="w-24 text-center text-sm font-medium">
-                {String(monthDate.getMonth() + 1).padStart(2, '0')}/{monthDate.getFullYear()}
-              </span>
-              <button onClick={() => setMonthDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))} className="text-rosa hover:text-ink p-1">
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
+          <MonthYearSelect value={monthDate} onValueChange={setMonthDate} className="w-[252px] max-w-full" />
         ) : (
           <div className="flex gap-4">
             <div className="flex flex-col gap-2">

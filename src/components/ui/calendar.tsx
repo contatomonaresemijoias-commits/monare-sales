@@ -1,20 +1,63 @@
 import * as React from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { DayPicker } from "react-day-picker";
+import { DayPicker, useDayPicker, useNavigation, type CaptionProps } from "react-day-picker";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 import { cn } from "@/lib/utils";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { MonthYearSelect } from "@/components/ui/month-year-select";
 
 export type CalendarProps = React.ComponentProps<typeof DayPicker>;
 
-function Calendar({ className, classNames, showOutsideDays = true, ...props }: CalendarProps) {
+function CalendarCaption({ id, displayMonth }: CaptionProps) {
+  const { locale, today, fromDate, toDate, disableNavigation, onPrevClick, onNextClick } = useDayPicker();
+  const { goToMonth, previousMonth, nextMonth } = useNavigation();
+
+  return (
+    <div className="space-y-2">
+      <span id={id} className="sr-only" aria-live="polite">
+        {format(displayMonth, 'LLLL yyyy', { locale })}
+      </span>
+      <MonthYearSelect
+        value={displayMonth}
+        onValueChange={goToMonth}
+        fromDate={fromDate}
+        toDate={toDate}
+        today={today}
+        locale={locale}
+        disabled={disableNavigation}
+      />
+      <div className="flex items-center justify-between gap-2">
+        <Button
+          type="button" variant="ghost" size="icon" className="h-11 w-11 rounded-lg" aria-label="Mês anterior"
+          disabled={disableNavigation || !previousMonth}
+          onClick={() => { if (previousMonth) { goToMonth(previousMonth); onPrevClick?.(previousMonth); } }}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <span className="text-xs text-ink-soft">Selecione o dia</span>
+        <Button
+          type="button" variant="ghost" size="icon" className="h-11 w-11 rounded-lg" aria-label="Próximo mês"
+          disabled={disableNavigation || !nextMonth}
+          onClick={() => { if (nextMonth) { goToMonth(nextMonth); onNextClick?.(nextMonth); } }}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function Calendar({ className, classNames, components, showOutsideDays = true, ...props }: CalendarProps) {
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}
+      locale={ptBR}
       className={cn("rounded-xl border border-border bg-popover p-3 shadow-sm", className)}
       classNames={{
         months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
-        month: "space-y-4",
+        month: "w-[252px] space-y-2",
         caption: "flex justify-center pt-1 relative items-center",
         caption_label: "text-sm font-medium",
         nav: "space-x-1 flex items-center",
@@ -42,8 +85,10 @@ function Calendar({ className, classNames, showOutsideDays = true, ...props }: C
         ...classNames,
       }}
       components={{
+        Caption: CalendarCaption,
         IconLeft: ({ ..._props }) => <ChevronLeft className="h-4 w-4" />,
         IconRight: ({ ..._props }) => <ChevronRight className="h-4 w-4" />,
+        ...components,
       }}
       {...props}
     />
