@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { BadgeCheck, Loader2, MessageCircle, Search, UserPlus, FileSpreadsheet, FileText } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,8 @@ import { AppSelect } from '@/components/ui/app-select';
 import { DatePickerInput } from '@/components/ui/date-picker-input';
 import { toast } from '@/hooks/use-toast';
 import { exportarExcel, exportarPDF } from '@/lib/exportarCandidatas';
+import { formatWhatsApp, whatsappLink } from '@/lib/monare';
+import { maskCPF } from '@/lib/validacao';
 
 type Status = 'CADASTRO_NAO_CONCLUIDO' | 'pendente' | 'aprovada' | 'recusada' | 'contratada';
 
@@ -39,6 +41,7 @@ type CandidataRow = {
   experiencia_vendas: string | null;
   experiencia_vendas_detalhe: string | null;
   restricao_cpf: string | null;
+  lgpd_consent: boolean | null;
   status: Status;
   avaliacao_manual: number | null;
   motivo_recusa: string | null;
@@ -70,6 +73,27 @@ const COMO_CONHECEU_OPTIONS = [
   { value: 'whatsapp_grupo', label: 'WhatsApp / grupo' },
   { value: 'outra', label: 'Outra' },
 ];
+
+const MODALIDADE_LABELS: Record<string, string> = {
+  maleta_consignada: 'Maleta consignada',
+  mostruario: 'Mostruário',
+  tenho_duvidas: 'Tenho dúvidas, quero conversar antes',
+};
+
+const CANAL_LABELS: Record<string, string> = {
+  instagram: 'Instagram',
+  whatsapp: 'WhatsApp',
+  presencial: 'Presencial',
+  outro: 'Outro',
+};
+
+const ESTADO_CIVIL_LABELS: Record<string, string> = {
+  solteira: 'Solteira',
+  casada: 'Casada',
+  uniao_estavel: 'União estável',
+  divorciada: 'Divorciada',
+  viuva: 'Viúva',
+};
 
 // Espelha STEP_LABELS de src/pages/CadastroRevendedora.tsx: etapa_atual guarda
 // a próxima etapa a ser preenchida, então 2 = já deixou nome e WhatsApp.
@@ -130,6 +154,43 @@ function formatDateTime(iso: string | null) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('pt-BR') + ' às ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function enderecoCompleto(c: CandidataRow) {
+  return [c.endereco_rua, c.endereco_numero, c.endereco_complemento, c.endereco_bairro, c.endereco_cidade, c.endereco_estado]
+    .filter((parte) => parte?.trim())
+    .join(', ');
+}
+
+function numeroWhatsapp(value: string | null) {
+  const digits = (value || '').replace(/\D/g, '');
+  const nacional = (digits.length === 12 || digits.length === 13) && digits.startsWith('55')
+    ? digits.slice(2)
+    : digits;
+  if (![10, 11].includes(nacional.length) || /^(\d)\1+$/.test(nacional)) return null;
+  // O DDD 55 também precisa do código do país: o tamanho distingue os dois.
+  return `55${nacional}`;
+}
+
+function ContatoWhatsapp({ numero, nome }: { numero: string | null; nome: string | null }) {
+  const phone = numeroWhatsapp(numero);
+  if (!phone) return <span>{numero?.trim() || 'Não informado'}</span>;
+  const nacional = phone.slice(2);
+  const label = nacional.length === 11
+    ? formatWhatsApp(nacional)
+    : nacional.replace(/^(\d{2})(\d{4})(\d{4})$/, '($1) $2-$3');
+  return (
+    <a
+      href={`https://wa.me/${phone}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Conversar com ${nome || 'a candidata'} no WhatsApp: ${label}`}
+      className="inline-flex min-h-10 items-center gap-2 rounded-md text-emerald-700 underline underline-offset-4 hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <MessageCircle size={16} aria-hidden="true" />
+      {label}
+    </a>
+  );
 }
 
 export default function Candidatas() {
@@ -383,7 +444,7 @@ export default function Candidatas() {
       ) : filter === 'incompleto' ? (
         <div className="space-y-3">
           {filtered.map((c) => (
-            <IncompletaCard key={c.id} c={c} />
+            <FichaCandidata key={c.id} c={c} />
           ))}
         </div>
       ) : (
@@ -405,48 +466,131 @@ export default function Candidatas() {
   );
 }
 
-function IncompletaCard({ c }: { c: CandidataRow }) {
-  const [expanded, setExpanded] = useState(false);
+function RespostasCadastro({ c }: { c: CandidataRow }) {
+  const titleId = useId();
+  const incompleto = c.status === 'CADASTRO_NAO_CONCLUIDO';
+  const origem = COMO_CONHECEU_OPTIONS.find((option) => option.value === c.como_conheceu)?.label ?? c.como_conheceu;
+  const respostas = [
+    { pergunta: 'Por que devemos escolher o seu cadastro?', resposta: c.motivo_escolha, destaque: true },
+    { pergunta: 'Qual sonho ou realização você quer conquistar com as vendas?', resposta: c.sonho_realizacao, destaque: true },
+    { pergunta: 'Você trabalha atualmente? Se sim, onde e com o quê?', resposta: c.trabalha_atualmente },
+    { pergunta: 'Você possui experiência com vendas?', resposta: c.experiencia_vendas === 'sim' ? 'Sim' : c.experiencia_vendas === 'nao' ? 'Não' : c.experiencia_vendas },
+    { pergunta: 'O que você vende ou já vendeu?', resposta: c.experiencia_vendas_detalhe },
+    { pergunta: 'Você possui restrição no CPF? Se sim, onde?', resposta: c.restricao_cpf },
+    { pergunta: 'Como você conheceu a marca?', resposta: origem },
+    ...(c.como_conheceu === 'outra' ? [{ pergunta: 'Como conheceu a marca — detalhe de Outra', resposta: c.como_conheceu_outra }] : []),
+    { pergunta: 'Qual modalidade de parceria você tem interesse?', resposta: MODALIDADE_LABELS[c.modalidade_interesse ?? ''] ?? c.modalidade_interesse },
+    { pergunta: 'Qual é o seu principal canal de vendas?', resposta: CANAL_LABELS[c.canal_principal ?? ''] ?? c.canal_principal },
+    { pergunta: 'Qual é o seu @ do Instagram?', resposta: c.instagram_handle },
+  ];
+
   return (
-    <div className="bg-white rounded-2xl border border-bege p-5">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <p className="text-lg font-serif text-ink">{c.nome_completo || 'Sem nome'}</p>
-          <p className="text-xs text-ink-soft">
-            WhatsApp: {c.whatsapp || '—'} · CPF: {c.cpf || '—'}
-          </p>
+    <section aria-labelledby={titleId} className="min-w-0 border-t border-border pt-4 mt-3">
+      <h3 id={titleId} className="font-serif text-lg text-ink">Respostas do cadastro</h3>
+      <p className="mt-1 mb-3 text-xs text-ink-soft">
+        {incompleto
+          ? 'Respostas já salvas até a etapa alcançada. As respostas finais só são salvas ao enviar o cadastro.'
+          : 'Perguntas do formulário e respostas informadas pela candidata.'}
+      </p>
+      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+        {respostas.map(({ pergunta, resposta, destaque }) => (
+          <div key={pergunta} className={`min-w-0 rounded-xl border p-3 ${destaque ? 'sm:col-span-2 border-rosa/20 bg-rosa/5' : 'border-border bg-bege-light/40'}`}>
+            <dt className="font-medium text-rosa">{pergunta}</dt>
+            <dd className={`mt-1 whitespace-pre-wrap [overflow-wrap:anywhere] leading-relaxed ${resposta?.trim() ? 'text-ink' : 'text-ink-soft italic'}`}>
+              {resposta?.trim() ? resposta : incompleto ? 'Resposta ainda não salva' : 'Resposta não registrada'}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+function DadosPessoaisCadastro({ c }: { c: CandidataRow }) {
+  const idade = calcIdade(c.data_nascimento);
+  const filhos = c.tem_filhos === 'sim'
+    ? c.filhos_quantidade == null
+      ? 'Sim (quantidade não informada)'
+      : `Sim, ${c.filhos_quantidade} ${c.filhos_quantidade === 1 ? 'filho' : 'filhos'}`
+    : c.tem_filhos === 'nao' ? 'Não' : null;
+  const dados = [
+    { label: 'CPF', value: c.cpf },
+    { label: 'Data de nascimento', value: c.data_nascimento ? new Date(`${c.data_nascimento}T00:00:00`).toLocaleDateString('pt-BR') : null },
+    { label: 'Idade', value: idade === null ? null : `${idade} anos` },
+    { label: 'E-mail', value: c.email },
+    { label: 'WhatsApp', value: c.whatsapp },
+    { label: 'Endereço completo', value: enderecoCompleto(c) },
+    { label: 'CEP', value: c.endereco_cep },
+    { label: 'Estado civil', value: ESTADO_CIVIL_LABELS[c.estado_civil ?? ''] ?? c.estado_civil },
+    { label: 'Filhos', value: filhos },
+    { label: 'Autorização de uso dos dados (LGPD)', value: c.lgpd_consent === true ? 'Autorizado' : 'Autorização não registrada' },
+    { label: 'Data de criação', value: formatDateTime(c.created_at) },
+    { label: 'Última atualização', value: formatDateTime(c.updated_at) },
+  ];
+
+  return (
+    <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-border pt-3 mt-4 text-sm">
+      {dados.map(({ label, value }) => (
+        <div key={label} className="min-w-0">
+          <dt className="text-[11px] uppercase tracking-wide text-rosa">{label}</dt>
+          <dd className="text-ink whitespace-pre-wrap [overflow-wrap:anywhere]">{value?.trim() ? value : 'Não informado'}</dd>
         </div>
+      ))}
+    </dl>
+  );
+}
+
+function FichaCandidata({ c, children, questionnaireExtras }: { c: CandidataRow; children?: ReactNode; questionnaireExtras?: ReactNode }) {
+  const [panel, setPanel] = useState<'dados' | 'questionario' | null>(null);
+  const detailsId = useId();
+  const questionnaireId = useId();
+  const incompleto = c.status === 'CADASTRO_NAO_CONCLUIDO';
+
+  return (
+    <article aria-label={`Cadastro de ${c.nome_completo || 'candidata sem nome'}`} className="min-w-0 bg-white rounded-2xl border border-bege p-5">
+      <h3 className="font-serif text-lg text-ink [overflow-wrap:anywhere]">{c.nome_completo || 'Sem nome'}</h3>
+      <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+        <div className="min-w-0">
+          <dt className="text-[11px] uppercase tracking-wide text-ink-soft">Telefone / WhatsApp</dt>
+          <dd className="text-ink [overflow-wrap:anywhere]"><ContatoWhatsapp numero={c.whatsapp} nome={c.nome_completo} /></dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-[11px] uppercase tracking-wide text-ink-soft">CPF</dt>
+          <dd className="mt-1 text-ink [overflow-wrap:anywhere]">{c.cpf?.trim() ? maskCPF(c.cpf) : 'Não informado'}</dd>
+        </div>
+        <div className="min-w-0 sm:col-span-2">
+          <dt className="text-[11px] uppercase tracking-wide text-ink-soft">Endereço</dt>
+          <dd className="mt-1 text-ink [overflow-wrap:anywhere]">{enderecoCompleto(c) || 'Não informado'}</dd>
+        </div>
+      </dl>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button type="button" variant={panel === 'dados' ? 'secondary' : 'outline'} className="rounded-xl" aria-expanded={panel === 'dados'} aria-controls={detailsId} onClick={() => setPanel((current) => current === 'dados' ? null : 'dados')}>
+          Dados pessoais
+        </Button>
+        <Button type="button" variant={panel === 'questionario' ? 'secondary' : 'outline'} className="rounded-xl" aria-expanded={panel === 'questionario'} aria-controls={questionnaireId} onClick={() => setPanel((current) => current === 'questionario' ? null : 'questionario')}>
+          Questionário
+        </Button>
       </div>
-      <div className="flex flex-wrap gap-2 my-3">
-        <span className="text-[11px] px-3 py-1.5 rounded-full border border-amber-300 text-amber-700 bg-amber-50">
-          {STAGE_LABELS[c.etapa_atual ?? 0] || `Parou na etapa ${c.etapa_atual ?? '—'}`}
-        </span>
-        <span className="text-[11px] px-3 py-1.5 rounded-full border border-border text-ink-soft">Cadastro não concluído</span>
+
+      {children}
+
+      <section id={detailsId} aria-label="Dados pessoais" hidden={panel !== 'dados'}>
+        {panel === 'dados' && (
+          <>
+            {incompleto && (
+              <p className="mt-4 text-xs text-amber-700">
+                Cadastro não concluído · {STAGE_LABELS[c.etapa_atual ?? 0] || `Parou na etapa ${c.etapa_atual ?? '—'}`}
+              </p>
+            )}
+            <DadosPessoaisCadastro c={c} />
+          </>
+        )}
+      </section>
+      <div id={questionnaireId} hidden={panel !== 'questionario'}>
+        {panel === 'questionario' && <><RespostasCadastro c={c} />{questionnaireExtras}</>}
       </div>
-      {expanded && (
-        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-border pt-3 mb-3 text-sm">
-          <div>
-            <dt className="text-[11px] uppercase tracking-wide text-rosa">Data de criação</dt>
-            <dd className="text-ink">{formatDateTime(c.created_at)}</dd>
-          </div>
-          <div>
-            <dt className="text-[11px] uppercase tracking-wide text-rosa">Última atualização</dt>
-            <dd className="text-ink">{formatDateTime(c.updated_at)}</dd>
-          </div>
-          <div>
-            <dt className="text-[11px] uppercase tracking-wide text-rosa">E-mail</dt>
-            <dd className="text-ink">{c.email || '—'}</dd>
-          </div>
-          <div>
-            <dt className="text-[11px] uppercase tracking-wide text-rosa">Cidade</dt>
-            <dd className="text-ink">{c.endereco_cidade || '—'}</dd>
-          </div>
-        </dl>
-      )}
-      <Button variant="outline" size="sm" onClick={() => setExpanded((e) => !e)}>
-        {expanded ? 'Ocultar' : 'Visualizar cadastro'}
-      </Button>
-    </div>
+    </article>
   );
 }
 
@@ -468,7 +612,6 @@ function CandidataCard({
     dados: { email: string; senha: string; role: string; nome: string },
   ) => Promise<boolean>;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const [showReject, setShowReject] = useState(false);
   const [motivo, setMotivo] = useState('');
   const [motivoOutro, setMotivoOutro] = useState('');
@@ -484,7 +627,6 @@ function CandidataCard({
   const cpfFlag = possibleCpfRestriction(c.restricao_cpf);
   const sorocaba = isSorocaba(c);
   const experiencia = temExperiencia(c);
-  const idade = calcIdade(c.data_nascimento);
   const status = c.status || 'pendente';
 
   function confirmReject() {
@@ -521,27 +663,15 @@ function CandidataCard({
   }
 
   function chamarWhatsapp() {
-    let phone = (c.whatsapp || '').replace(/\D/g, '');
-    if (phone.length >= 10 && !phone.startsWith('55')) phone = '55' + phone;
+    const phone = numeroWhatsapp(c.whatsapp);
+    if (!phone) return;
     const firstName = (c.nome_completo || 'Candidata').split(' ')[0];
     const msg = `Parabéns, ${firstName}! 🎉 Analisamos seu perfil e você foi pré-aprovada! Agora só falta a gente fazer um bate papo rapidinho por vídeo chamada, pra gente se conhecer e eu te passar algumas informações. Você consegue na [DIA], às [HORA]?`;
-    window.open(`https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`, '_blank');
+    window.open(whatsappLink(msg, phone), '_blank', 'noopener,noreferrer');
   }
 
-  return (
-    <div className="bg-white rounded-2xl border border-bege p-5">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <p className="text-lg font-serif text-ink">
-            {c.nome_completo || 'Sem nome'}
-            {idade !== null ? ` · ${idade} anos` : ''}
-          </p>
-          <p className="text-xs text-ink-soft">
-            {c.endereco_cidade || '—'} · {c.whatsapp || '—'} · {c.email || '—'} · Instagram: {c.instagram_handle || '—'}
-          </p>
-        </div>
-      </div>
-
+  const avaliacao = (
+    <>
       <div className="flex flex-wrap gap-2 my-3">
         {isDuplicate && (
           <span className="text-[11px] px-3 py-1.5 rounded-full border border-red-300 text-red-700 bg-red-50">
@@ -565,17 +695,6 @@ function CandidataCard({
         )}
       </div>
 
-      <dl className="space-y-2 border-t border-border pt-3 text-sm">
-        <div>
-          <dt className="text-[11px] uppercase tracking-wide text-rosa">Por que devemos escolher — leia com atenção</dt>
-          <dd className="text-ink">{c.motivo_escolha || '—'}</dd>
-        </div>
-        <div>
-          <dt className="text-[11px] uppercase tracking-wide text-rosa">Sonho / realização</dt>
-          <dd className="text-ink">{c.sonho_realizacao || '—'}</dd>
-        </div>
-      </dl>
-
       <div className="flex flex-wrap items-center gap-2 mt-4">
         <span className="text-xs font-medium text-ink-soft">Avaliação interna:</span>
         {[0, 5, 10].map((v) => (
@@ -590,56 +709,12 @@ function CandidataCard({
           </button>
         ))}
       </div>
+    </>
+  );
 
-      {expanded && (
-        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-border pt-3 mt-4 text-sm">
-          <div>
-            <dt className="text-[11px] uppercase tracking-wide text-rosa">CPF</dt>
-            <dd className="text-ink">{c.cpf || '—'}</dd>
-          </div>
-          <div>
-            <dt className="text-[11px] uppercase tracking-wide text-rosa">Endereço completo</dt>
-            <dd className="text-ink">
-              {[c.endereco_rua, c.endereco_numero, c.endereco_bairro, c.endereco_cidade].filter(Boolean).join(', ') || '—'}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-[11px] uppercase tracking-wide text-rosa">Modalidade de interesse</dt>
-            <dd className="text-ink">{c.modalidade_interesse || '—'}</dd>
-          </div>
-          <div>
-            <dt className="text-[11px] uppercase tracking-wide text-rosa">Estado civil</dt>
-            <dd className="text-ink">{c.estado_civil || '—'}</dd>
-          </div>
-          <div>
-            <dt className="text-[11px] uppercase tracking-wide text-rosa">Filhos</dt>
-            <dd className="text-ink">
-              {c.tem_filhos === 'sim'
-                ? `Sim, ${c.filhos_quantidade ?? '—'} ${c.filhos_quantidade === 1 ? 'filho' : 'filhos'}`
-                : c.tem_filhos === 'nao'
-                  ? 'Não'
-                  : '—'}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-[11px] uppercase tracking-wide text-rosa">Trabalha atualmente?</dt>
-            <dd className="text-ink">{c.trabalha_atualmente || '—'}</dd>
-          </div>
-          <div>
-            <dt className="text-[11px] uppercase tracking-wide text-rosa">Experiência com vendas (detalhe)</dt>
-            <dd className="text-ink">{c.experiencia_vendas_detalhe || '—'}</dd>
-          </div>
-          <div>
-            <dt className="text-[11px] uppercase tracking-wide text-rosa">Restrição no CPF (relatada)</dt>
-            <dd className="text-ink">{c.restricao_cpf || '—'}</dd>
-          </div>
-        </dl>
-      )}
-
+  return (
+    <FichaCandidata c={c} questionnaireExtras={avaliacao}>
       <div className="flex flex-wrap gap-2 items-center mt-4">
-        <Button variant="outline" size="sm" onClick={() => setExpanded((e) => !e)}>
-          Dados pessoais
-        </Button>
         {status === 'pendente' && (
           <>
             <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => onApprove(c.id)}>
@@ -655,7 +730,7 @@ function CandidataCard({
             <span className="text-xs text-ink-soft">
               Status atual: <strong>Aprovada</strong>
             </span>
-            <Button size="sm" className="bg-[#25D366] hover:bg-[#1fb659]" onClick={chamarWhatsapp}>
+            <Button size="sm" className="bg-[#25D366] hover:bg-[#1fb659]" disabled={!numeroWhatsapp(c.whatsapp)} onClick={chamarWhatsapp}>
               <MessageCircle size={14} />
               Chamar no WhatsApp
             </Button>
@@ -754,6 +829,6 @@ function CandidataCard({
           </div>
         </div>
       )}
-    </div>
+    </FichaCandidata>
   );
 }

@@ -54,17 +54,22 @@ export function DatePickerInput({
           <CalendarIcon className="ml-3 h-4 w-4 shrink-0 opacity-60" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-auto rounded-xl border-0 p-0 shadow-lg">
+      <PopoverContent align="start" collisionPadding={8} className="w-auto max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-xl border-0 p-0 shadow-lg">
         <Calendar
           mode="single"
           selected={selected}
           defaultMonth={selected || maxDate || new Date()}
+          fromDate={minDate}
+          toDate={maxDate}
           onSelect={(date) => {
             if (!date) return;
             onValueChange(format(date, 'yyyy-MM-dd'));
             setOpen(false);
           }}
-          disabled={{ before: minDate, after: maxDate }}
+          disabled={[
+            ...(minDate ? [{ before: minDate }] : []),
+            ...(maxDate ? [{ after: maxDate }] : []),
+          ]}
           locale={ptBR}
           initialFocus
         />
